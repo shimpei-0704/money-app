@@ -28,6 +28,8 @@
     -webkit-font-smoothing:antialiased;
   }
   input, select, button{ font-family:inherit; font-size:15px; }
+  input[type="date"]{ width:100%; min-width:0; max-width:100%; -webkit-appearance:none; appearance:none; }
+  #app{ overflow-x:hidden; }
   #app{ max-width:480px; margin:0 auto; min-height:100%; display:flex; flex-direction:column; }
 
   /* ---- Auth ---- */
@@ -208,6 +210,7 @@ const state = {
   categories: [],
   fixedCosts: [],
   goal: 0,
+  monthStartDay: 1,
   calMonth: new Date(),
   calFilter: { category: 'all' },
   sumRange: null,
@@ -224,14 +227,14 @@ document.addEventListener('input', e=>{
   }
 });
 const DEFAULT_CATS = [
-  {name:'固定費', type:'expense', color:'#B9542E', order:0},
-  {name:'流動費', type:'expense', color:'#D98A5E', order:1},
-  {name:'その他', type:'expense', color:'#8A8579', order:2},
-  {name:'給与', type:'income', color:'#145F52', order:0},
-  {name:'副業', type:'income', color:'#3E9C82', order:1},
-  {name:'その他', type:'income', color:'#8A8579', order:2},
+  {name:'固定費', type:'expense', color:'#FF5D5D', order:0},
+  {name:'流動費', type:'expense', color:'#FF9F40', order:1},
+  {name:'その他', type:'expense', color:'#C9A0FF', order:2},
+  {name:'給与', type:'income', color:'#2FE0A6', order:0},
+  {name:'副業', type:'income', color:'#3DC6F0', order:1},
+  {name:'その他', type:'income', color:'#C9A0FF', order:2},
 ];
-const PALETTE = ['#145F52','#3E9C82','#B9542E','#D98A5E','#8A8579','#4A6FA5','#9C6F3E','#7A5C9C'];
+const PALETTE = ['#FF5D5D','#FF9F40','#FFD23F','#2FE0A6','#3DC6F0','#5D7DFF','#C9A0FF','#FF6FB0'];
 
 /* ====== Auth ====== */
 const authScreen = document.getElementById('authScreen');
@@ -313,6 +316,7 @@ function listenAll(){
   }));
   unsubs.push(onSnapshot(doc(db,'users',state.uid,'meta','settings'), snap => {
     state.goal = snap.exists() ? (snap.data().goalAmount||0) : 0;
+    state.monthStartDay = snap.exists() ? (snap.data().monthStartDay||1) : 1;
     render();
   }));
 }
@@ -335,10 +339,19 @@ function render(){
 }
 
 /* ---------- ホーム ---------- */
-function monthKey(d){ return d.slice(0,7); }
+function getCurrentPeriod(){
+  const s = Math.min(28, Math.max(1, state.monthStartDay||1));
+  const now = new Date();
+  let start;
+  if(now.getDate() >= s) start = new Date(now.getFullYear(), now.getMonth(), s);
+  else start = new Date(now.getFullYear(), now.getMonth()-1, s);
+  const end = new Date(start.getFullYear(), start.getMonth()+1, s);
+  const toStr = d => d.toISOString().slice(0,10);
+  return { start: toStr(start), end: toStr(end), startDate: start, endDate: end };
+}
 function renderHome(){
-  const nowKey = todayStr().slice(0,7);
-  const thisMonth = state.transactions.filter(t=>monthKey(t.date)===nowKey);
+  const period = getCurrentPeriod();
+  const thisMonth = state.transactions.filter(t=> t.date>=period.start && t.date<period.end);
   const monthBalance = thisMonth.reduce((s,t)=> s + (t.type==='income'?t.amount:-t.amount), 0);
   const monthIncome = thisMonth.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
   const monthExpense = thisMonth.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
@@ -363,6 +376,7 @@ function renderHome(){
       </div>
       <div class="progress-track"><div class="progress-fill" style="width:${goalPct}%"></div></div>
     </div>
+    <div class="card-label" style="margin-bottom:-2px;">${period.startDate.getMonth()+1}/${period.startDate.getDate()} 〜 ${period.endDate.getMonth()+1}/${period.endDate.getDate()-1}</div>
     <div class="row2">
       <div class="card"><div class="card-label">今月の収入</div><div class="card-value" style="color:var(--success)">+${yen(monthIncome)}</div></div>
       <div class="card"><div class="card-label">今月の支出</div><div class="card-value" style="color:var(--danger)">-${yen(monthExpense)}</div></div>
@@ -546,6 +560,7 @@ function renderEdit(){
     <h2 class="screen-title">編集</h2>
     <div class="section-label">目標設定</div>
     <div class="list-row" id="goalRow" style="cursor:pointer;"><span>貯蓄目標額</span><span style="color:var(--text-sub);">${state.goal>0?yen(state.goal):'未設定'} ›</span></div>
+    <div class="list-row" id="periodRow" style="cursor:pointer;"><span>「今月」の起算日</span><span style="color:var(--text-sub);">毎月${state.monthStartDay||1}日 ›</span></div>
 
     <div class="section-label">固定費登録</div>
     ${state.fixedCosts.map(f=>`
@@ -603,6 +618,7 @@ function attachScreenEvents(){
   }
   if(state.screen==='edit'){
     document.getElementById('goalRow').onclick = openGoalForm;
+    document.getElementById('periodRow').onclick = openPeriodForm;
     document.getElementById('addFixed').onclick = ()=>openFixedForm(null);
     document.querySelectorAll('.fixed-edit-row').forEach(r=>{
       r.onclick = ()=>openFixedForm(state.fixedCosts.find(f=>f.id===r.dataset.id));
@@ -725,6 +741,26 @@ function openGoalForm(){
   document.getElementById('fSave').onclick = async ()=>{
     const v = parseAmt(document.getElementById('goalInput').value);
     await setDoc(doc(db,'users',state.uid,'meta','settings'), { goalAmount: v }, {merge:true});
+    closeModal();
+  };
+}
+
+function openPeriodForm(){
+  const box = document.getElementById('modalBox');
+  box.innerHTML = `
+    <div class="mh"><span>「今月」の起算日</span><button id="mClose">✕</button></div>
+    <div class="form-field"><label>毎月何日を起点にするか(給料日など)</label>
+      <select id="periodInput">${Array.from({length:28},(_,i)=>i+1).map(d=>`<option value="${d}" ${state.monthStartDay===d?'selected':''}>${d}日</option>`).join('')}</select>
+    </div>
+    <div style="font-size:11px;color:var(--text-sub);margin-bottom:4px;">例:25日を選ぶと「今月」は毎月25日〜翌月24日として集計されます</div>
+    <div class="form-actions"><button class="cancel" id="fCancel">キャンセル</button><button class="save" id="fSave">保存</button></div>
+  `;
+  document.getElementById('modalOverlay').classList.add('show');
+  document.getElementById('mClose').onclick = closeModal;
+  document.getElementById('fCancel').onclick = closeModal;
+  document.getElementById('fSave').onclick = async ()=>{
+    const v = parseInt(document.getElementById('periodInput').value)||1;
+    await setDoc(doc(db,'users',state.uid,'meta','settings'), { monthStartDay: v }, {merge:true});
     closeModal();
   };
 }
