@@ -9,13 +9,14 @@
 <title>家計簿</title>
 <style>
   :root{
-    --bg:#F6F4EF; --surface:#FFFFFF; --surface-2:#EFEBE2;
-    --text:#20291F; --text-sub:#6C7268; --border:#E2DCCF;
-    --primary:#145F52; --primary-dark:#0D4238;
-    --success:#1F7A5C; --success-bg:#E4F3EC;
-    --danger:#B9542E; --danger-bg:#FBEAE2; --danger-strong:#E0A98C;
-    --accent-bg:#E6EFEC;
+    --bg:#101214; --surface:#1B1F22; --surface-2:#262B2F;
+    --text:#EDEFEF; --text-sub:#9AA1A6; --border:#2E3338;
+    --primary:#2FA98C; --primary-dark:#22806B;
+    --success:#3CB88F; --success-bg:#173029;
+    --danger:#E0855F; --danger-bg:#3A241D; --danger-strong:#B9542E;
+    --accent-bg:#1D2E2A;
     --radius:14px; --radius-sm:10px;
+    color-scheme: dark;
   }
   *{box-sizing:border-box;}
   html,body{height:100%;}
@@ -215,6 +216,13 @@ const state = {
 };
 const todayStr = () => new Date().toISOString().slice(0,10);
 const yen = n => (n<0?'-':'') + Math.abs(Math.round(n)).toLocaleString('ja-JP') + '円';
+const parseAmt = v => parseFloat(String(v||'').replace(/[^0-9.]/g,'')) || 0;
+document.addEventListener('input', e=>{
+  if(e.target.classList && e.target.classList.contains('amt-input')){
+    const digits = e.target.value.replace(/[^0-9]/g,'');
+    e.target.value = digits ? parseInt(digits,10).toLocaleString('ja-JP') : '';
+  }
+});
 const DEFAULT_CATS = [
   {name:'固定費', type:'expense', color:'#B9542E', order:0},
   {name:'流動費', type:'expense', color:'#D98A5E', order:1},
@@ -332,6 +340,8 @@ function renderHome(){
   const nowKey = todayStr().slice(0,7);
   const thisMonth = state.transactions.filter(t=>monthKey(t.date)===nowKey);
   const monthBalance = thisMonth.reduce((s,t)=> s + (t.type==='income'?t.amount:-t.amount), 0);
+  const monthIncome = thisMonth.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
+  const monthExpense = thisMonth.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
   const allBalance = state.transactions.reduce((s,t)=> s + (t.type==='income'?t.amount:-t.amount), 0);
   const goalPct = state.goal>0 ? Math.min(100, Math.max(0,(allBalance/state.goal*100))) : 0;
 
@@ -352,6 +362,10 @@ function renderHome(){
         <span style="font-size:12px;color:var(--text-sub);">${state.goal>0 ? '/ '+yen(state.goal) : '(未設定)'}</span>
       </div>
       <div class="progress-track"><div class="progress-fill" style="width:${goalPct}%"></div></div>
+    </div>
+    <div class="row2">
+      <div class="card"><div class="card-label">今月の収入</div><div class="card-value" style="color:var(--success)">+${yen(monthIncome)}</div></div>
+      <div class="card"><div class="card-label">今月の支出</div><div class="card-value" style="color:var(--danger)">-${yen(monthExpense)}</div></div>
     </div>
     <div class="row2">
       <div class="card"><div class="card-label">今月の収支</div><div class="card-value" style="color:${monthBalance>=0?'var(--success)':'var(--danger)'}">${monthBalance>=0?'+':''}${yen(monthBalance)}</div></div>
@@ -378,24 +392,28 @@ function renderCalendar(){
   const catOptions = ['<option value="all">すべてのカテゴリ</option>']
     .concat(state.categories.map(c=>`<option value="${c.id}">${escapeHtml(c.name)}</option>`)).join('');
 
-  const dayTotals = {};
+  const dayTotals = {}, dayIncome = {};
   state.transactions.forEach(t=>{
-    if(t.type!=='expense') return;
     if(state.calFilter.category!=='all' && t.category!==state.calFilter.category) return;
     const d = new Date(t.date);
-    if(d.getFullYear()===y && d.getMonth()===m){
-      dayTotals[d.getDate()] = (dayTotals[d.getDate()]||0) + t.amount;
-    }
+    if(d.getFullYear()!==y || d.getMonth()!==m) return;
+    if(t.type==='expense') dayTotals[d.getDate()] = (dayTotals[d.getDate()]||0) + t.amount;
+    else dayIncome[d.getDate()] = (dayIncome[d.getDate()]||0) + t.amount;
   });
 
   let cells = '';
   for(let i=0;i<startDow;i++) cells += `<div class="cal-cell empty"></div>`;
   for(let day=1; day<=daysInMonth; day++){
     const amt = dayTotals[day]||0;
+    const inc = dayIncome[day]||0;
     let bg = 'transparent';
     if(amt>=10000) bg = 'var(--danger-strong)';
     else if(amt>0) bg = 'var(--danger-bg)';
-    cells += `<div class="cal-cell" data-day="${day}" style="background:${bg}"><div>${day}</div>${amt>0?`<span class="amt">${amt>=10000?'-'+Math.round(amt/1000)+'k':'-'+amt.toLocaleString()}</span>`:''}</div>`;
+    cells += `<div class="cal-cell" data-day="${day}" style="background:${bg}">
+      <div>${day}</div>
+      ${amt>0?`<span class="amt">${amt>=10000?'-'+Math.round(amt/1000)+'k':'-'+amt.toLocaleString()}</span>`:''}
+      ${inc>0?`<span class="amt" style="color:var(--success)">+${inc>=10000?Math.round(inc/1000)+'k':inc.toLocaleString()}</span>`:''}
+    </div>`;
   }
 
   return `
@@ -415,6 +433,7 @@ function renderCalendar(){
     <div class="legend">
       <span><span class="sw" style="background:var(--danger-strong)"></span>1万円以上の支出</span>
       <span><span class="sw" style="background:var(--danger-bg)"></span>支出あり</span>
+      <span><span class="sw" style="background:var(--success)"></span>収入あり(緑数字)</span>
     </div>
   `;
 }
@@ -432,7 +451,7 @@ function renderInput(){
     <div class="field"><label>カテゴリ</label>
       <select id="inCat">${cats.map(c=>`<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('') || '<option value="">カテゴリがありません</option>'}</select>
     </div>
-    <div class="field"><label>金額</label><input type="number" id="inAmt" placeholder="0" inputmode="numeric"></div>
+    <div class="field"><label>金額</label><input type="text" id="inAmt" class="amt-input" placeholder="0" inputmode="numeric"></div>
     <div class="field"><label>日付</label><input type="date" id="inDate" value="${todayStr()}"></div>
     <div class="field"><label>メモ</label><input type="text" id="inMemo" placeholder="任意"></div>
     <div id="inMsg" style="color:var(--danger);font-size:13px;min-height:16px;"></div>
@@ -451,6 +470,8 @@ function renderSummary(){
   const {start,end} = state.sumRange;
   const inRange = t => t.date>=start && t.date<=end;
   const expenses = state.transactions.filter(t=>t.type==='expense' && inRange(t));
+  const incomes = state.transactions.filter(t=>t.type==='income' && inRange(t));
+  const incomeTotal = incomes.reduce((s,t)=>s+t.amount,0);
   const totalsByCat = {};
   expenses.forEach(t=>{ totalsByCat[t.category] = (totalsByCat[t.category]||0)+t.amount; });
   const catEntries = Object.entries(totalsByCat).map(([id,amt])=>{
@@ -467,27 +488,33 @@ function renderSummary(){
   });
   gradient = gradient.slice(0,-2) || 'var(--surface-2) 0% 100%';
 
-  // 日別推移(期間内)
+  // 日別の収支推移(期間内)
   const days = [];
   let d0 = new Date(start), d1 = new Date(end);
   for(let d=new Date(d0); d<=d1; d.setDate(d.getDate()+1)) days.push(d.toISOString().slice(0,10));
   const dayVals = days.map(day=>{
     const exp = state.transactions.filter(t=>t.type==='expense'&&t.date===day).reduce((s,t)=>s+t.amount,0);
-    return exp;
+    const inc = state.transactions.filter(t=>t.type==='income'&&t.date===day).reduce((s,t)=>s+t.amount,0);
+    return inc - exp;
   });
-  const maxVal = Math.max(1, ...dayVals);
+  const maxVal = Math.max(1, ...dayVals.map(v=>Math.abs(v)));
 
   return `
     <h2 class="screen-title">集計</h2>
     <div class="card-label">集計期間</div>
     <button id="rangeBtn"><span>${start} 〜 ${end}</span><span>📅</span></button>
     <div id="rangeCalWrap">${renderRangeCalendar()}</div>
+    <div class="row2" style="margin-bottom:14px;">
+      <div class="card"><div class="card-label">期間の収入</div><div class="card-value" style="color:var(--success)">+${yen(incomeTotal)}</div></div>
+      <div class="card"><div class="card-label">期間の支出</div><div class="card-value" style="color:var(--danger)">-${yen(total)}</div></div>
+    </div>
     ${total>0 ? `
+      <div class="card-label">支出のカテゴリ内訳</div>
       <div class="pie-wrap"><div style="width:140px;height:140px;border-radius:50%;background:conic-gradient(${gradient});"></div></div>
       <div class="pie-legend">${catEntries.map(c=>`<span><span class="dot" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${c.color};margin-right:4px;"></span>${escapeHtml(c.name)} ${yen(c.amt)}</span>`).join('')}</div>
-      <div class="card-label">期間内の支出推移</div>
-      <div class="bar-chart">${dayVals.map(v=>`<div class="bar" style="height:${Math.max(3,v/maxVal*100)}%"></div>`).join('')}</div>
-    ` : '<div class="no-data">この期間の支出記録がありません</div>'}
+    ` : ''}
+    <div class="card-label">期間内の収支推移</div>
+    ${dayVals.some(v=>v!==0) ? `<div class="bar-chart">${dayVals.map(v=>`<div class="bar ${v>=0?'income':''}" style="height:${Math.max(3,Math.abs(v)/maxVal*100)}%"></div>`).join('')}</div>` : '<div class="no-data">この期間の記録がありません</div>'}
   `;
 }
 function renderRangeCalendar(){
@@ -667,7 +694,7 @@ function attachSwipeDelete(){
 /* ---- 入力保存 ---- */
 async function saveTransaction(keepGoing){
   const cat = document.getElementById('inCat').value;
-  const amt = parseFloat(document.getElementById('inAmt').value);
+  const amt = parseAmt(document.getElementById('inAmt').value);
   const date = document.getElementById('inDate').value;
   const memo = document.getElementById('inMemo').value;
   const msg = document.getElementById('inMsg');
@@ -689,14 +716,14 @@ function openGoalForm(){
   const box = document.getElementById('modalBox');
   box.innerHTML = `
     <div class="mh"><span>貯蓄目標額</span><button id="mClose">✕</button></div>
-    <div class="form-field"><label>目標金額(円)</label><input type="number" id="goalInput" value="${state.goal||''}" inputmode="numeric"></div>
+    <div class="form-field"><label>目標金額(円)</label><input type="text" id="goalInput" class="amt-input" value="${state.goal?state.goal.toLocaleString('ja-JP'):''}" inputmode="numeric"></div>
     <div class="form-actions"><button class="cancel" id="fCancel">キャンセル</button><button class="save" id="fSave">保存</button></div>
   `;
   document.getElementById('modalOverlay').classList.add('show');
   document.getElementById('mClose').onclick = closeModal;
   document.getElementById('fCancel').onclick = closeModal;
   document.getElementById('fSave').onclick = async ()=>{
-    const v = parseFloat(document.getElementById('goalInput').value)||0;
+    const v = parseAmt(document.getElementById('goalInput').value);
     await setDoc(doc(db,'users',state.uid,'meta','settings'), { goalAmount: v }, {merge:true});
     closeModal();
   };
@@ -707,8 +734,8 @@ function openFixedForm(existing){
   box.innerHTML = `
     <div class="mh"><span>${existing?'固定費を編集':'固定費を追加'}</span><button id="mClose">✕</button></div>
     <div class="form-field"><label>名称</label><input type="text" id="fName" value="${existing?escapeHtml(existing.name):''}"></div>
-    <div class="form-field"><label>金額(円)</label><input type="number" id="fAmt" value="${existing?existing.amount:''}" inputmode="numeric"></div>
-    <div class="form-field"><label>支払日(毎月何日)</label><input type="number" id="fDay" min="1" max="31" value="${existing?existing.day:''}"></div>
+    <div class="form-field"><label>金額(円)</label><input type="text" id="fAmt" class="amt-input" value="${existing?existing.amount.toLocaleString('ja-JP'):''}" inputmode="numeric"></div>
+    <div class="form-field"><label>支払日(毎月何日)</label><select id="fDay">${Array.from({length:31},(_,i)=>i+1).map(d=>`<option value="${d}" ${existing&&existing.day===d?'selected':''}>${d}日</option>`).join('')}</select></div>
     <div class="form-field"><label>支払い方法</label><input type="text" id="fMethod" placeholder="例:引き落とし、カード払い" value="${existing?escapeHtml(existing.method||''):''}"></div>
     <div class="form-actions">
       <button class="cancel" id="fCancel">キャンセル</button>
@@ -725,8 +752,8 @@ function openFixedForm(existing){
   document.getElementById('fSave').onclick = async ()=>{
     const data = {
       name: document.getElementById('fName').value.trim(),
-      amount: parseFloat(document.getElementById('fAmt').value)||0,
-      day: Math.min(31,Math.max(1, parseInt(document.getElementById('fDay').value)||1)),
+      amount: parseAmt(document.getElementById('fAmt').value),
+      day: parseInt(document.getElementById('fDay').value)||1,
       method: document.getElementById('fMethod').value.trim(),
     };
     if(!data.name){ return; }
