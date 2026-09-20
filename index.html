@@ -53,9 +53,9 @@
 
   /* ---- Tab bar ---- */
   #tabbar{ position:fixed; bottom:0; left:0; right:0; background:var(--surface); border-top:1px solid var(--border); display:flex; padding-bottom:env(safe-area-inset-bottom,0px); max-width:480px; margin:0 auto; }
-  .tab-btn{ flex:1; border:none; background:none; padding:8px 0 7px; display:flex; flex-direction:column; align-items:center; gap:2px; color:var(--text-sub); cursor:pointer; min-width:0; }
-  .tab-btn svg{ width:19px; height:19px; }
-  .tab-btn span{ font-size:9px; white-space:nowrap; }
+  .tab-btn{ flex:1; border:none; background:none; padding:7px 0 6px; display:flex; flex-direction:column; align-items:center; gap:2px; color:var(--text-sub); cursor:pointer; min-width:0; }
+  .tab-btn svg{ width:17px; height:17px; }
+  .tab-btn span{ font-size:8px; white-space:nowrap; }
   .tab-btn.active{ color:var(--primary); }
 
   /* ---- Cards ---- */
@@ -208,6 +208,7 @@
       <button class="tab-btn" data-screen="input"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg><span>入力</span></button>
       <button class="tab-btn" data-screen="summary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V10M12 20V4M20 20v-7"/></svg><span>集計</span></button>
       <button class="tab-btn" data-screen="shopping"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2l1.5 6M18 2l-1.5 6M3.5 8h17l-1.6 10.3a2 2 0 01-2 1.7H7.1a2 2 0 01-2-1.7L3.5 8z"/></svg><span>買い物</span></button>
+      <button class="tab-btn" data-screen="list"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg><span>一覧</span></button>
       <button class="tab-btn" data-screen="edit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg><span>編集</span></button>
     </div>
   </div>
@@ -253,14 +254,15 @@ const state = {
   advanceContacts: [],
   shoppingHeadings: [],
   shoppingItems: [],
-  goal: 0,
+  goals: [],
   monthStartDay: 1,
   calMonth: new Date(),
   calFilter: { category: 'all' },
   sumRange: null,
   rangePicking: null,
   authMode: 'login',
-  advanceFilter: { person: 'all', status: 'all' }
+  advanceFilter: { person: 'all', status: 'all' },
+  listFilter: { start:'', end:'', expense:true, income:true, advance:true }
 };
 const todayStr = () => new Date().toISOString().slice(0,10);
 const yen = n => (n<0?'-':'') + Math.abs(Math.round(n)).toLocaleString('ja-JP') + '円';
@@ -380,8 +382,11 @@ function listenAll(){
     render();
   }));
   unsubs.push(onSnapshot(doc(db,'users',state.uid,'meta','settings'), snap => {
-    state.goal = snap.exists() ? (snap.data().goalAmount||0) : 0;
     state.monthStartDay = snap.exists() ? (snap.data().monthStartDay||1) : 1;
+    render();
+  }));
+  unsubs.push(onSnapshot(collection(db,'users',state.uid,'goals'), snap => {
+    state.goals = snap.docs.map(d=>({id:d.id, ...d.data()}));
     render();
   }));
 }
@@ -402,6 +407,7 @@ function render(){
   if(state.screen==='edit') area.innerHTML = renderEdit();
   if(state.screen==='advances') area.innerHTML = renderAdvances();
   if(state.screen==='shopping') area.innerHTML = renderShopping();
+  if(state.screen==='list') area.innerHTML = renderList();
   attachScreenEvents();
 }
 
@@ -423,7 +429,8 @@ function renderHome(){
   const monthIncome = thisMonth.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
   const monthExpense = thisMonth.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
   const allBalance = state.transactions.reduce((s,t)=> s + (t.type==='income'?t.amount:-t.amount), 0);
-  const goalPct = state.goal>0 ? Math.min(100, Math.max(0,(allBalance/state.goal*100))) : 0;
+  const allocatedTotal = state.goals.reduce((s,g)=>s+(g.allocatedAmount||0),0);
+  const unallocated = allBalance - allocatedTotal;
 
   const today = new Date();
   const fixedWithDays = state.fixedCosts.map(f=>{
@@ -440,13 +447,22 @@ function renderHome(){
   return `
     <h2 class="screen-title">ホーム</h2>
     <div class="card">
-      <div class="card-label">貯蓄目標</div>
-      <div style="display:flex;justify-content:space-between;align-items:baseline;">
-        <span class="card-value">${yen(Math.max(0,allBalance))}</span>
-        <span style="font-size:12px;color:var(--text-sub);">${state.goal>0 ? '/ '+yen(state.goal) : '(未設定)'}</span>
-      </div>
-      <div class="progress-track"><div class="progress-fill" style="width:${goalPct}%"></div></div>
+      <div class="card-label">貯蓄残高</div>
+      <div class="card-value">${yen(Math.max(0,allBalance))}</div>
+      <div style="font-size:11px;color:var(--text-sub);margin-top:4px;">うち未配分:${yen(unallocated)}</div>
     </div>
+    ${state.goals.length ? `
+    <div class="card">
+      <div class="card-label">貯蓄目標</div>
+      ${state.goals.map(g=>{
+        const pct = g.targetAmount>0 ? Math.min(100,Math.max(0,(g.allocatedAmount||0)/g.targetAmount*100)) : 0;
+        return `
+        <div class="budget-row">
+          <div class="bh"><span>${escapeHtml(g.name)}</span><span>${yen(g.allocatedAmount||0)} / ${yen(g.targetAmount)}</span></div>
+          <div class="budget-track"><div class="budget-fill" style="width:${pct}%;background:var(--primary)"></div></div>
+        </div>`;
+      }).join('')}
+    </div>` : ''}
     <div class="card-label" style="margin-bottom:-2px;">${period.startDate.getMonth()+1}/${period.startDate.getDate()} 〜 ${period.endDate.getMonth()+1}/${period.endDate.getDate()-1}</div>
     <div class="row2">
       <div class="card"><div class="card-label">今月の収入</div><div class="card-value" style="color:var(--success)">+${yen(monthIncome)}</div></div>
@@ -653,9 +669,13 @@ function renderEdit(){
   const incCats = state.categories.filter(c=>c.type==='income').sort((a,b)=>a.order-b.order);
   return `
     <h2 class="screen-title">編集</h2>
-    <div class="section-label">目標設定</div>
-    <div class="list-row" id="goalRow" style="cursor:pointer;"><span>貯蓄目標額</span><span style="color:var(--text-sub);">${state.goal>0?yen(state.goal):'未設定'} ›</span></div>
-    <div class="list-row" id="periodRow" style="cursor:pointer;"><span>「今月」の起算日</span><span style="color:var(--text-sub);">毎月${state.monthStartDay||1}日 ›</span></div>
+    <div class="section-label">貯蓄目標</div>
+    ${state.goals.map(g=>`
+      <div class="list-row goal-edit-row" data-id="${g.id}" style="cursor:pointer;">
+        <span>${escapeHtml(g.name)}・配分${yen(g.allocatedAmount||0)} / 目標${yen(g.targetAmount)}</span><span class="icon-btn">✎</span>
+      </div>`).join('')}
+    <button class="add-btn" id="addGoal">+ 目標を追加</button>
+    <div class="list-row" id="periodRow" style="cursor:pointer;margin-top:14px;"><span>「今月」の起算日</span><span style="color:var(--text-sub);">毎月${state.monthStartDay||1}日 ›</span></div>
 
     <div class="section-label">予算設定</div>
     ${state.budgets.map(b=>{
@@ -768,6 +788,49 @@ function renderShopping(){
   `;
 }
 
+/* ---------- 一覧 ---------- */
+function renderList(){
+  const f = state.listFilter;
+  let records = [];
+  state.transactions.forEach(t=>{
+    if(t.type==='expense' && !f.expense) return;
+    if(t.type==='income' && !f.income) return;
+    const cat = state.categories.find(c=>c.id===t.category);
+    records.push({ id:t.id, kind:'transaction', type:t.type, date:t.date, label: cat?cat.name:'不明', memo:t.memo, amount:t.amount });
+  });
+  if(f.advance){
+    state.advances.forEach(a=>{
+      records.push({ id:a.id, kind:'advance', type:'advance', date:a.date, label:'立替・'+a.person, memo:a.memo, amount:a.amount, settled:a.settled });
+    });
+  }
+  if(f.start) records = records.filter(r=>r.date>=f.start);
+  if(f.end) records = records.filter(r=>r.date<=f.end);
+  records.sort((a,b)=> b.date.localeCompare(a.date));
+
+  return `
+    <h2 class="screen-title">一覧</h2>
+    <div class="filter-row">
+      <input type="date" id="listStart" value="${f.start}">
+      <input type="date" id="listEnd" value="${f.end}">
+    </div>
+    <div style="display:flex;gap:14px;margin-bottom:14px;font-size:13px;">
+      <label><input type="checkbox" id="fExpense" ${f.expense?'checked':''} style="width:auto;margin-right:4px;">支出</label>
+      <label><input type="checkbox" id="fIncome" ${f.income?'checked':''} style="width:auto;margin-right:4px;">収入</label>
+      <label><input type="checkbox" id="fAdvance" ${f.advance?'checked':''} style="width:auto;margin-right:4px;">立替</label>
+    </div>
+    ${records.length ? records.map(r=>`
+      <div class="list-record-row" data-id="${r.id}" data-kind="${r.kind}" style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="flex:1;">
+          <div style="font-size:13px;">${escapeHtml(r.label)}${r.memo?'・'+escapeHtml(r.memo):''}</div>
+          <div style="font-size:11px;color:var(--text-sub);">${r.date}${r.kind==='advance'?(r.settled?'・精算済み':'・未精算'):''}</div>
+        </div>
+        <div style="font-weight:600;font-size:13px;color:${r.type==='income'?'var(--success)':(r.type==='expense'?'var(--danger)':'var(--text)')};margin-right:10px;">${r.type==='income'?'+':'-'}${yen(r.amount)}</div>
+        <span class="icon-btn list-edit" data-id="${r.id}" data-kind="${r.kind}">✎</span>
+        <span class="icon-btn list-del" data-id="${r.id}" data-kind="${r.kind}" style="margin-left:4px;">✕</span>
+      </div>`).join('') : '<div class="no-data">該当する記録がありません</div>'}
+  `;
+}
+
 function catRow(c){
   return `<div class="list-row cat-row" draggable="true" data-id="${c.id}">
     <div class="l"><span style="cursor:grab;">⠿</span><span class="dot" style="background:${c.color}"></span><span>${escapeHtml(c.name)}</span></div>
@@ -814,7 +877,10 @@ function attachScreenEvents(){
     attachRangeCalEvents();
   }
   if(state.screen==='edit'){
-    document.getElementById('goalRow').onclick = openGoalForm;
+    document.getElementById('addGoal').onclick = ()=>openGoalForm(null);
+    document.querySelectorAll('.goal-edit-row').forEach(r=>{
+      r.onclick = ()=>openGoalForm(state.goals.find(g=>g.id===r.dataset.id));
+    });
     document.getElementById('periodRow').onclick = openPeriodForm;
     document.getElementById('addBudget').onclick = ()=>openBudgetForm(null);
     document.querySelectorAll('.budget-edit-row').forEach(r=>{
@@ -875,6 +941,25 @@ function attachScreenEvents(){
       b.onclick = ()=> deleteDoc(doc(db,'users',state.uid,'shoppingItems',b.dataset.id));
     });
     attachShoppingDrag();
+  }
+  if(state.screen==='list'){
+    document.getElementById('listStart').onchange = e=>{ state.listFilter.start = e.target.value; render(); };
+    document.getElementById('listEnd').onchange = e=>{ state.listFilter.end = e.target.value; render(); };
+    document.getElementById('fExpense').onchange = e=>{ state.listFilter.expense = e.target.checked; render(); };
+    document.getElementById('fIncome').onchange = e=>{ state.listFilter.income = e.target.checked; render(); };
+    document.getElementById('fAdvance').onchange = e=>{ state.listFilter.advance = e.target.checked; render(); };
+    document.querySelectorAll('.list-edit').forEach(b=>{
+      b.onclick = ()=>{
+        if(b.dataset.kind==='advance') openAdvanceForm(state.advances.find(a=>a.id===b.dataset.id));
+        else openTransactionForm(state.transactions.find(t=>t.id===b.dataset.id));
+      };
+    });
+    document.querySelectorAll('.list-del').forEach(b=>{
+      b.onclick = ()=>{
+        const col = b.dataset.kind==='advance' ? 'advances' : 'transactions';
+        deleteDoc(doc(db,'users',state.uid,col,b.dataset.id));
+      };
+    });
   }
 }
 
@@ -979,19 +1064,75 @@ async function saveTransaction(keepGoing){
 }
 
 /* ---- フォームモーダル群 ---- */
-function openGoalForm(){
+function openTransactionForm(existing){
+  if(!existing) return;
   const box = document.getElementById('modalBox');
+  const cats = state.categories.filter(c=>c.type===existing.type);
   box.innerHTML = `
-    <div class="mh"><span>貯蓄目標額</span><button id="mClose">✕</button></div>
-    <div class="form-field"><label>目標金額(円)</label><input type="text" id="goalInput" class="amt-input" value="${state.goal?state.goal.toLocaleString('ja-JP'):''}" inputmode="numeric"></div>
-    <div class="form-actions"><button class="cancel" id="fCancel">キャンセル</button><button class="save" id="fSave">保存</button></div>
+    <div class="mh"><span>${existing.type==='income'?'収入':'支出'}を編集</span><button id="mClose">✕</button></div>
+    <div class="form-field"><label>カテゴリ</label>
+      <select id="tCat">${cats.map(c=>`<option value="${c.id}" ${existing.category===c.id?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}</select>
+    </div>
+    <div class="form-field"><label>金額(円)</label><input type="text" id="tAmt" class="amt-input" value="${existing.amount.toLocaleString('ja-JP')}" inputmode="numeric"></div>
+    <div class="form-field"><label>日付</label><input type="date" id="tDate" value="${existing.date}"></div>
+    <div class="form-field"><label>メモ</label><input type="text" id="tMemo" value="${escapeHtml(existing.memo||'')}"></div>
+    <div id="tErr" style="color:var(--danger);font-size:12px;min-height:16px;"></div>
+    <div class="form-actions">
+      <button class="cancel" id="fCancel">キャンセル</button>
+      <button class="delete" id="fDelete">削除</button>
+      <button class="save" id="fSave">保存</button>
+    </div>
   `;
   document.getElementById('modalOverlay').classList.add('show');
   document.getElementById('mClose').onclick = closeModal;
   document.getElementById('fCancel').onclick = closeModal;
+  document.getElementById('fDelete').onclick = async ()=>{
+    await deleteDoc(doc(db,'users',state.uid,'transactions',existing.id)); closeModal();
+  };
   document.getElementById('fSave').onclick = async ()=>{
-    const v = parseAmt(document.getElementById('goalInput').value);
-    await setDoc(doc(db,'users',state.uid,'meta','settings'), { goalAmount: v }, {merge:true});
+    const errEl = document.getElementById('tErr');
+    const amount = parseAmt(document.getElementById('tAmt').value);
+    const date = document.getElementById('tDate').value;
+    if(amount<=0){ errEl.textContent = '金額を正しく入力してください'; return; }
+    if(!date){ errEl.textContent = '日付を選択してください'; return; }
+    await updateDoc(doc(db,'users',state.uid,'transactions',existing.id), {
+      category: document.getElementById('tCat').value,
+      amount, date,
+      memo: document.getElementById('tMemo').value.trim()
+    });
+    closeModal();
+  };
+}
+function openGoalForm(existing){
+  const box = document.getElementById('modalBox');
+  box.innerHTML = `
+    <div class="mh"><span>${existing?'目標を編集':'目標を追加'}</span><button id="mClose">✕</button></div>
+    <div class="form-field"><label>目標名(例:旅行資金)</label><input type="text" id="goalName" value="${existing?escapeHtml(existing.name):''}"></div>
+    <div class="form-field"><label>目標金額(円)</label><input type="text" id="goalTarget" class="amt-input" value="${existing?existing.targetAmount.toLocaleString('ja-JP'):''}" inputmode="numeric"></div>
+    <div class="form-field"><label>現在の配分額(円)</label><input type="text" id="goalAllocated" class="amt-input" value="${existing?(existing.allocatedAmount||0).toLocaleString('ja-JP'):''}" inputmode="numeric"></div>
+    <div id="goalErr" style="color:var(--danger);font-size:12px;min-height:16px;"></div>
+    <div class="form-actions">
+      <button class="cancel" id="fCancel">キャンセル</button>
+      ${existing?'<button class="delete" id="fDelete">削除</button>':''}
+      <button class="save" id="fSave">保存</button>
+    </div>
+  `;
+  document.getElementById('modalOverlay').classList.add('show');
+  document.getElementById('mClose').onclick = closeModal;
+  document.getElementById('fCancel').onclick = closeModal;
+  if(existing) document.getElementById('fDelete').onclick = async ()=>{
+    await deleteDoc(doc(db,'users',state.uid,'goals',existing.id)); closeModal();
+  };
+  document.getElementById('fSave').onclick = async ()=>{
+    const name = document.getElementById('goalName').value.trim();
+    const targetAmount = parseAmt(document.getElementById('goalTarget').value);
+    const allocatedAmount = parseAmt(document.getElementById('goalAllocated').value);
+    const errEl = document.getElementById('goalErr');
+    if(!name){ errEl.textContent = '目標名を入力してください'; return; }
+    if(targetAmount<=0){ errEl.textContent = '目標金額を正しく入力してください'; return; }
+    const data = { name, targetAmount, allocatedAmount };
+    if(existing) await updateDoc(doc(db,'users',state.uid,'goals',existing.id), data);
+    else await addDoc(collection(db,'users',state.uid,'goals'), data);
     closeModal();
   };
 }
