@@ -132,6 +132,38 @@
   .cat-row.dragging{ opacity:.4; }
   .continue-btn{ width:100%; margin-top:14px; padding:12px 0; background:var(--accent-bg); border:1px solid var(--primary); border-radius:var(--radius-sm); color:var(--primary); font-weight:600; font-size:14px; cursor:pointer; }
 
+  /* ---- サブ画面共通 ---- */
+  .back-header{ display:flex; align-items:center; gap:8px; margin-bottom:14px; }
+  .back-header button{ background:none; border:none; font-size:20px; color:var(--text); cursor:pointer; padding:2px 6px 2px 0; }
+  .back-header h2{ margin:0; font-size:18px; font-weight:700; }
+
+  /* ---- 予算 ---- */
+  .budget-row{ margin-bottom:12px; }
+  .budget-row .bh{ display:flex; justify-content:space-between; font-size:13px; margin-bottom:5px; }
+  .budget-track{ height:8px; background:var(--surface-2); border-radius:4px; overflow:hidden; }
+  .budget-fill{ height:100%; border-radius:4px; }
+
+  /* ---- 立て替え ---- */
+  .adv-filter{ display:flex; gap:8px; margin-bottom:12px; }
+  .adv-filter select{ flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); font-size:13px; color:var(--text); }
+  .adv-card{ padding:10px 0; border-bottom:1px solid var(--border); cursor:pointer; }
+  .adv-card .t1{ display:flex; justify-content:space-between; font-size:14px; }
+  .adv-card .t2{ display:flex; justify-content:space-between; align-items:center; margin-top:3px; font-size:12px; color:var(--text-sub); }
+  .status-pill{ font-size:10px; padding:3px 9px; border-radius:20px; }
+  .status-pill.unsettled{ background:var(--danger-bg); color:var(--danger); }
+  .status-pill.settled{ background:var(--success-bg); color:var(--success); }
+  .receipt-thumb{ width:36px; height:36px; object-fit:cover; border-radius:6px; margin-left:8px; }
+  .link-btn{ background:none; border:none; color:var(--primary); font-size:12px; text-decoration:underline; cursor:pointer; padding:0; }
+
+  /* ---- 買い物リスト ---- */
+  .shop-list-row{ display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-bottom:1px solid var(--border); cursor:pointer; font-size:14px; }
+  .shop-item{ display:flex; align-items:center; gap:10px; padding:9px 0; border-bottom:1px solid var(--border); }
+  .shop-item input[type=checkbox]{ width:19px; height:19px; accent-color:var(--primary); }
+  .shop-item.done span.iname{ text-decoration:line-through; color:var(--text-sub); }
+  .add-item-row{ display:flex; gap:8px; margin-top:12px; }
+  .add-item-row input{ flex:1; padding:10px 12px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); color:var(--text); }
+  .add-item-row button{ padding:0 16px; background:var(--primary); color:#fff; border:none; border-radius:var(--radius-sm); }
+
   /* ---- Form modal (used for goal/fixedcost/category edit) ---- */
   .form-field{ margin-bottom:12px; }
   .form-field label{ display:block; font-size:12px; color:var(--text-sub); margin-bottom:4px; }
@@ -206,16 +238,24 @@ setPersistence(auth, browserLocalPersistence);
 const state = {
   uid: null,
   screen: 'home',
+  prevScreen: 'edit',
   transactions: [],
   categories: [],
   fixedCosts: [],
+  budgets: [],
+  advances: [],
+  advanceContacts: [],
+  shoppingLists: [],
+  shoppingItems: [],
   goal: 0,
   monthStartDay: 1,
   calMonth: new Date(),
   calFilter: { category: 'all' },
   sumRange: null,
   rangePicking: null,
-  authMode: 'login'
+  authMode: 'login',
+  advanceFilter: { person: 'all', status: 'all' },
+  activeShoppingList: null
 };
 const todayStr = () => new Date().toISOString().slice(0,10);
 const yen = n => (n<0?'-':'') + Math.abs(Math.round(n)).toLocaleString('ja-JP') + '円';
@@ -314,6 +354,26 @@ function listenAll(){
     state.fixedCosts = snap.docs.map(d=>({id:d.id, ...d.data()}));
     render();
   }));
+  unsubs.push(onSnapshot(collection(db,'users',state.uid,'budgets'), snap => {
+    state.budgets = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    render();
+  }));
+  unsubs.push(onSnapshot(collection(db,'users',state.uid,'advances'), snap => {
+    state.advances = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    render();
+  }));
+  unsubs.push(onSnapshot(collection(db,'users',state.uid,'advanceContacts'), snap => {
+    state.advanceContacts = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    render();
+  }));
+  unsubs.push(onSnapshot(collection(db,'users',state.uid,'shoppingLists'), snap => {
+    state.shoppingLists = snap.docs.map(d=>({id:d.id, ...d.data()})).sort((a,b)=>(a.order||0)-(b.order||0));
+    render();
+  }));
+  unsubs.push(onSnapshot(collection(db,'users',state.uid,'shoppingItems'), snap => {
+    state.shoppingItems = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    render();
+  }));
   unsubs.push(onSnapshot(doc(db,'users',state.uid,'meta','settings'), snap => {
     state.goal = snap.exists() ? (snap.data().goalAmount||0) : 0;
     state.monthStartDay = snap.exists() ? (snap.data().monthStartDay||1) : 1;
@@ -335,6 +395,9 @@ function render(){
   if(state.screen==='input') area.innerHTML = renderInput();
   if(state.screen==='summary') area.innerHTML = renderSummary();
   if(state.screen==='edit') area.innerHTML = renderEdit();
+  if(state.screen==='budget') area.innerHTML = renderBudget();
+  if(state.screen==='advances') area.innerHTML = renderAdvances();
+  if(state.screen==='shopping') area.innerHTML = renderShopping();
   attachScreenEvents();
 }
 
@@ -562,6 +625,11 @@ function renderEdit(){
     <div class="list-row" id="goalRow" style="cursor:pointer;"><span>貯蓄目標額</span><span style="color:var(--text-sub);">${state.goal>0?yen(state.goal):'未設定'} ›</span></div>
     <div class="list-row" id="periodRow" style="cursor:pointer;"><span>「今月」の起算日</span><span style="color:var(--text-sub);">毎月${state.monthStartDay||1}日 ›</span></div>
 
+    <div class="section-label">その他の機能</div>
+    <div class="list-row" id="gotoBudget" style="cursor:pointer;"><span>予算管理</span><span style="color:var(--text-sub);">›</span></div>
+    <div class="list-row" id="gotoAdvances" style="cursor:pointer;"><span>立て替え管理</span><span style="color:var(--text-sub);">›</span></div>
+    <div class="list-row" id="gotoShopping" style="cursor:pointer;"><span>買い物リスト</span><span style="color:var(--text-sub);">›</span></div>
+
     <div class="section-label">固定費登録</div>
     ${state.fixedCosts.map(f=>`
       <div class="list-row fixed-edit-row" data-id="${f.id}" style="cursor:pointer;">
@@ -581,6 +649,96 @@ function renderEdit(){
     <button class="btn-secondary" id="logoutBtn">ログアウト</button>
   `;
 }
+/* ---------- 予算管理 ---------- */
+function renderBudget(){
+  const period = getCurrentPeriod();
+  const expCats = state.categories.filter(c=>c.type==='expense');
+  const rows = state.budgets.map(b=>{
+    const cat = expCats.find(c=>c.id===b.categoryId);
+    const spent = state.transactions.filter(t=>t.type==='expense' && t.category===b.categoryId && t.date>=period.start && t.date<period.end).reduce((s,t)=>s+t.amount,0);
+    const pct = b.amount>0 ? spent/b.amount*100 : 0;
+    let color = 'var(--primary)';
+    if(pct>=100) color = 'var(--danger)';
+    else if(pct>=80) color = '#FFD23F';
+    return { id:b.id, name: cat?cat.name:'不明なカテゴリ', amount:b.amount, spent, pct, color };
+  });
+  return `
+    <div class="back-header"><button id="backBtn">‹</button><h2>予算管理</h2></div>
+    <div class="card-label">${period.startDate.getMonth()+1}/${period.startDate.getDate()} 〜 ${period.endDate.getMonth()+1}/${period.endDate.getDate()-1}の予算</div>
+    ${rows.length ? rows.map(r=>`
+      <div class="budget-row budget-item" data-id="${r.id}">
+        <div class="bh"><span>${escapeHtml(r.name)}</span><span>${yen(r.spent)} / ${yen(r.amount)}</span></div>
+        <div class="budget-track"><div class="budget-fill" style="width:${Math.min(100,r.pct)}%;background:${r.color}"></div></div>
+      </div>`).join('') : '<div class="no-data">予算が設定されていません</div>'}
+    <button class="add-btn" id="addBudget">+ 予算を追加</button>
+  `;
+}
+
+/* ---------- 立て替え管理 ---------- */
+function renderAdvances(){
+  const f = state.advanceFilter;
+  let list = state.advances.slice().sort((a,b)=> b.date.localeCompare(a.date));
+  if(f.person!=='all') list = list.filter(a=>a.person===f.person);
+  if(f.status!=='all') list = list.filter(a=>(f.status==='settled')===!!a.settled);
+  const unsettledTotal = state.advances.filter(a=>!a.settled).reduce((s,a)=>s+a.amount,0);
+  return `
+    <div class="back-header"><button id="backBtn">‹</button><h2>立て替え管理</h2></div>
+    <div class="card" style="margin-bottom:14px;"><div class="card-label">未精算の合計</div><div class="card-value" style="color:var(--danger)">${yen(unsettledTotal)}</div></div>
+    <div class="adv-filter">
+      <select id="advPersonFilter"><option value="all">すべての相手</option>${state.advanceContacts.map(c=>`<option value="${escapeHtml(c.name)}" ${f.person===c.name?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}</select>
+      <select id="advStatusFilter">
+        <option value="all" ${f.status==='all'?'selected':''}>すべて</option>
+        <option value="unsettled" ${f.status==='unsettled'?'selected':''}>未精算</option>
+        <option value="settled" ${f.status==='settled'?'selected':''}>精算済み</option>
+      </select>
+    </div>
+    <button class="link-btn" id="copyAdvList" style="margin-bottom:10px;">この一覧をテキストでコピー</button><br>
+    <button class="link-btn" id="manageContacts" style="margin-bottom:14px;">相手リストを管理</button>
+    ${list.length ? list.map(a=>`
+      <div class="adv-card adv-row" data-id="${a.id}">
+        <div class="t1"><span>${escapeHtml(a.person)}</span><span>${yen(a.amount)}</span></div>
+        <div class="t2">
+          <span>${a.date}${a.memo?'・'+escapeHtml(a.memo):''}</span>
+          <span style="display:flex;align-items:center;">
+            <span class="status-pill ${a.settled?'settled':'unsettled'}">${a.settled?'精算済み':'未精算'}</span>
+            ${a.receiptImg?`<img class="receipt-thumb" src="${a.receiptImg}">`:''}
+          </span>
+        </div>
+      </div>`).join('') : '<div class="no-data">立て替え記録がありません</div>'}
+    <button class="add-btn" id="addAdvance">+ 立て替えを追加</button>
+  `;
+}
+
+/* ---------- 買い物リスト ---------- */
+function renderShopping(){
+  if(!state.activeShoppingList){
+    return `
+      <div class="back-header"><button id="backBtn">‹</button><h2>買い物リスト</h2></div>
+      ${state.shoppingLists.length ? state.shoppingLists.map(l=>{
+        const cnt = state.shoppingItems.filter(i=>i.listId===l.id && !i.done).length;
+        return `<div class="shop-list-row" data-id="${l.id}"><span>${escapeHtml(l.name)}</span><span style="color:var(--text-sub);">残り${cnt}件 ›</span></div>`;
+      }).join('') : '<div class="no-data">リストがありません</div>'}
+      <button class="add-btn" id="addShopList">+ リストを追加</button>
+    `;
+  }
+  const list = state.shoppingLists.find(l=>l.id===state.activeShoppingList);
+  const items = state.shoppingItems.filter(i=>i.listId===state.activeShoppingList);
+  return `
+    <div class="back-header"><button id="backToLists">‹</button><h2>${escapeHtml(list?list.name:'')}</h2></div>
+    ${items.length ? items.map(i=>`
+      <div class="shop-item ${i.done?'done':''}" data-id="${i.id}">
+        <input type="checkbox" class="shop-check" data-id="${i.id}" ${i.done?'checked':''}>
+        <span class="iname" style="flex:1;">${escapeHtml(i.name)}</span>
+        <span class="icon-btn shop-del" data-id="${i.id}">✕</span>
+      </div>`).join('') : '<div class="no-data">アイテムがありません</div>'}
+    <div class="add-item-row">
+      <input type="text" id="newItemInput" placeholder="追加するもの">
+      <button id="addItemBtn">追加</button>
+    </div>
+    <button class="link-btn" style="margin-top:16px;" id="deleteListBtn">このリストを削除</button>
+  `;
+}
+
 function catRow(c){
   return `<div class="list-row cat-row" draggable="true" data-id="${c.id}">
     <div class="l"><span style="cursor:grab;">⠿</span><span class="dot" style="background:${c.color}"></span><span>${escapeHtml(c.name)}</span></div>
@@ -619,6 +777,9 @@ function attachScreenEvents(){
   if(state.screen==='edit'){
     document.getElementById('goalRow').onclick = openGoalForm;
     document.getElementById('periodRow').onclick = openPeriodForm;
+    document.getElementById('gotoBudget').onclick = ()=>{ state.screen='budget'; render(); };
+    document.getElementById('gotoAdvances').onclick = ()=>{ state.screen='advances'; render(); };
+    document.getElementById('gotoShopping').onclick = ()=>{ state.screen='shopping'; render(); };
     document.getElementById('addFixed').onclick = ()=>openFixedForm(null);
     document.querySelectorAll('.fixed-edit-row').forEach(r=>{
       r.onclick = ()=>openFixedForm(state.fixedCosts.find(f=>f.id===r.dataset.id));
@@ -634,6 +795,49 @@ function attachScreenEvents(){
     });
     document.getElementById('logoutBtn').onclick = ()=>signOut(auth);
     attachDragReorder();
+  }
+  if(state.screen==='budget'){
+    document.getElementById('backBtn').onclick = ()=>{ state.screen='edit'; render(); };
+    document.getElementById('addBudget').onclick = ()=>openBudgetForm(null);
+    document.querySelectorAll('.budget-item').forEach(r=>{
+      r.onclick = ()=>openBudgetForm(state.budgets.find(b=>b.id===r.dataset.id));
+    });
+  }
+  if(state.screen==='advances'){
+    document.getElementById('backBtn').onclick = ()=>{ state.screen='edit'; render(); };
+    document.getElementById('advPersonFilter').onchange = e=>{ state.advanceFilter.person = e.target.value; render(); };
+    document.getElementById('advStatusFilter').onchange = e=>{ state.advanceFilter.status = e.target.value; render(); };
+    document.getElementById('addAdvance').onclick = ()=>openAdvanceForm(null);
+    document.getElementById('manageContacts').onclick = openContactsManager;
+    document.getElementById('copyAdvList').onclick = copyAdvanceListText;
+    document.querySelectorAll('.adv-row').forEach(r=>{
+      r.onclick = ()=>openAdvanceForm(state.advances.find(a=>a.id===r.dataset.id));
+    });
+  }
+  if(state.screen==='shopping'){
+    if(!state.activeShoppingList){
+      document.getElementById('backBtn').onclick = ()=>{ state.screen='edit'; render(); };
+      document.getElementById('addShopList').onclick = openShoppingListForm;
+      document.querySelectorAll('.shop-list-row').forEach(r=>{
+        r.onclick = ()=>{ state.activeShoppingList = r.dataset.id; render(); };
+      });
+    }else{
+      document.getElementById('backToLists').onclick = ()=>{ state.activeShoppingList=null; render(); };
+      document.getElementById('addItemBtn').onclick = addShoppingItem;
+      document.getElementById('newItemInput').addEventListener('keydown', e=>{ if(e.key==='Enter') addShoppingItem(); });
+      document.querySelectorAll('.shop-check').forEach(cb=>{
+        cb.onchange = ()=> updateDoc(doc(db,'users',state.uid,'shoppingItems',cb.dataset.id), { done: cb.checked });
+      });
+      document.querySelectorAll('.shop-del').forEach(b=>{
+        b.onclick = ()=> deleteDoc(doc(db,'users',state.uid,'shoppingItems',b.dataset.id));
+      });
+      document.getElementById('deleteListBtn').onclick = async ()=>{
+        const items = state.shoppingItems.filter(i=>i.listId===state.activeShoppingList);
+        await Promise.all(items.map(i=>deleteDoc(doc(db,'users',state.uid,'shoppingItems',i.id))));
+        await deleteDoc(doc(db,'users',state.uid,'shoppingLists',state.activeShoppingList));
+        state.activeShoppingList = null; render();
+      };
+    }
   }
 }
 
@@ -869,6 +1073,187 @@ function getDragAfterElement(container, y){
     if(offset < 0 && offset > closest.offset) return {offset, element: child};
     else return closest;
   }, {offset: -Infinity}).element;
+}
+
+/* ====== 予算フォーム ====== */
+function openBudgetForm(existing){
+  const box = document.getElementById('modalBox');
+  const expCats = state.categories.filter(c=>c.type==='expense');
+  const usedIds = state.budgets.filter(b=>!existing||b.id!==existing.id).map(b=>b.categoryId);
+  const options = expCats.filter(c=> existing ? c.id===existing.categoryId : !usedIds.includes(c.id));
+  box.innerHTML = `
+    <div class="mh"><span>${existing?'予算を編集':'予算を追加'}</span><button id="mClose">✕</button></div>
+    <div class="form-field"><label>カテゴリ</label>
+      <select id="bCat" ${existing?'disabled':''}>${options.length?options.map(c=>`<option value="${c.id}" ${existing&&existing.categoryId===c.id?'selected':''}>${escapeHtml(c.name)}</option>`).join(''):'<option value="">設定できるカテゴリがありません</option>'}</select>
+    </div>
+    <div class="form-field"><label>予算金額(円)</label><input type="text" id="bAmt" class="amt-input" value="${existing?existing.amount.toLocaleString('ja-JP'):''}" inputmode="numeric"></div>
+    <div class="form-actions">
+      <button class="cancel" id="fCancel">キャンセル</button>
+      ${existing?'<button class="delete" id="fDelete">削除</button>':''}
+      <button class="save" id="fSave">保存</button>
+    </div>
+  `;
+  document.getElementById('modalOverlay').classList.add('show');
+  document.getElementById('mClose').onclick = closeModal;
+  document.getElementById('fCancel').onclick = closeModal;
+  if(existing) document.getElementById('fDelete').onclick = async ()=>{
+    await deleteDoc(doc(db,'users',state.uid,'budgets',existing.id)); closeModal();
+  };
+  document.getElementById('fSave').onclick = async ()=>{
+    const categoryId = document.getElementById('bCat').value;
+    const amount = parseAmt(document.getElementById('bAmt').value);
+    if(!categoryId || amount<=0) return;
+    if(existing) await updateDoc(doc(db,'users',state.uid,'budgets',existing.id), { amount });
+    else await addDoc(collection(db,'users',state.uid,'budgets'), { categoryId, amount });
+    closeModal();
+  };
+}
+
+/* ====== 立て替えフォーム ====== */
+function compressImage(file){
+  return new Promise((resolve)=>{
+    const reader = new FileReader();
+    reader.onload = e=>{
+      const img = new Image();
+      img.onload = ()=>{
+        const maxW = 480;
+        const scale = Math.min(1, maxW/img.width);
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width*scale; canvas.height = img.height*scale;
+        canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', 0.5));
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+function openAdvanceForm(existing){
+  const box = document.getElementById('modalBox');
+  let receiptData = existing ? (existing.receiptImg||null) : null;
+  box.innerHTML = `
+    <div class="mh"><span>${existing?'立て替えを編集':'立て替えを追加'}</span><button id="mClose">✕</button></div>
+    <div class="form-field"><label>相手</label>
+      <select id="aPersonSel"><option value="__new__">+ 新しい相手を入力</option>${state.advanceContacts.map(c=>`<option value="${escapeHtml(c.name)}" ${existing&&existing.person===c.name?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}</select>
+    </div>
+    <div class="form-field" id="aPersonNewWrap" style="display:none;"><label>相手の名前</label><input type="text" id="aPersonNew"></div>
+    <div class="form-field"><label>金額(円)</label><input type="text" id="aAmt" class="amt-input" value="${existing?existing.amount.toLocaleString('ja-JP'):''}" inputmode="numeric"></div>
+    <div class="form-field"><label>日付</label><input type="date" id="aDate" value="${existing?existing.date:todayStr()}"></div>
+    <div class="form-field"><label>メモ</label><input type="text" id="aMemo" value="${existing?escapeHtml(existing.memo||''):''}"></div>
+    <div class="form-field"><label>レシート写真(任意)</label><input type="file" accept="image/*" id="aReceipt">
+      <div id="aReceiptPreview" style="margin-top:8px;">${receiptData?`<img src="${receiptData}" style="max-width:100px;border-radius:8px;">`:''}</div>
+    </div>
+    <div class="form-field"><label><input type="checkbox" id="aSettled" ${existing&&existing.settled?'checked':''} style="width:auto;margin-right:6px;">精算済みにする</label></div>
+    <div class="form-actions">
+      <button class="cancel" id="fCancel">キャンセル</button>
+      ${existing?'<button class="delete" id="fDelete">削除</button>':''}
+      <button class="save" id="fSave">保存</button>
+    </div>
+  `;
+  document.getElementById('modalOverlay').classList.add('show');
+  document.getElementById('mClose').onclick = closeModal;
+  document.getElementById('fCancel').onclick = closeModal;
+  document.getElementById('aPersonSel').onchange = e=>{
+    document.getElementById('aPersonNewWrap').style.display = e.target.value==='__new__' ? 'block' : 'none';
+  };
+  document.getElementById('aReceipt').onchange = async e=>{
+    const f = e.target.files[0];
+    if(!f) return;
+    receiptData = await compressImage(f);
+    document.getElementById('aReceiptPreview').innerHTML = `<img src="${receiptData}" style="max-width:100px;border-radius:8px;">`;
+  };
+  if(existing) document.getElementById('fDelete').onclick = async ()=>{
+    await deleteDoc(doc(db,'users',state.uid,'advances',existing.id)); closeModal();
+  };
+  document.getElementById('fSave').onclick = async ()=>{
+    let person = document.getElementById('aPersonSel').value;
+    if(person==='__new__'){
+      person = document.getElementById('aPersonNew').value.trim();
+      if(!person) return;
+      if(!state.advanceContacts.some(c=>c.name===person)){
+        await addDoc(collection(db,'users',state.uid,'advanceContacts'), { name: person });
+      }
+    }
+    const data = {
+      person,
+      amount: parseAmt(document.getElementById('aAmt').value),
+      date: document.getElementById('aDate').value,
+      memo: document.getElementById('aMemo').value.trim(),
+      settled: document.getElementById('aSettled').checked,
+      receiptImg: receiptData || null
+    };
+    if(!data.person || data.amount<=0 || !data.date) return;
+    if(existing) await updateDoc(doc(db,'users',state.uid,'advances',existing.id), data);
+    else await addDoc(collection(db,'users',state.uid,'advances'), data);
+    closeModal();
+  };
+}
+function openContactsManager(){
+  const box = document.getElementById('modalBox');
+  box.innerHTML = `
+    <div class="mh"><span>相手リストの管理</span><button id="mClose">✕</button></div>
+    ${state.advanceContacts.map(c=>`
+      <div class="list-row"><span>${escapeHtml(c.name)}</span><span class="icon-btn contact-del" data-id="${c.id}">✕</span></div>
+    `).join('') || '<div class="no-data">相手が登録されていません</div>'}
+    <div class="form-field" style="margin-top:12px;"><label>新しい相手を追加</label><input type="text" id="newContact"></div>
+    <div class="form-actions"><button class="cancel" id="fCancel">閉じる</button><button class="save" id="fAddContact">追加</button></div>
+  `;
+  document.getElementById('modalOverlay').classList.add('show');
+  document.getElementById('mClose').onclick = closeModal;
+  document.getElementById('fCancel').onclick = closeModal;
+  document.querySelectorAll('.contact-del').forEach(b=>{
+    b.onclick = async ()=>{ await deleteDoc(doc(db,'users',state.uid,'advanceContacts',b.dataset.id)); openContactsManager(); };
+  });
+  document.getElementById('fAddContact').onclick = async ()=>{
+    const name = document.getElementById('newContact').value.trim();
+    if(!name) return;
+    await addDoc(collection(db,'users',state.uid,'advanceContacts'), { name });
+    openContactsManager();
+  };
+}
+async function copyAdvanceListText(){
+  const f = state.advanceFilter;
+  let list = state.advances.slice().sort((a,b)=>b.date.localeCompare(a.date));
+  if(f.person!=='all') list = list.filter(a=>a.person===f.person);
+  if(f.status!=='all') list = list.filter(a=>(f.status==='settled')===!!a.settled);
+  const lines = list.map(a=>`${a.date}　${a.person}　${yen(a.amount)}${a.memo?'　'+a.memo:''}${a.settled?'　(精算済み)':''}`);
+  const total = list.filter(a=>!a.settled).reduce((s,a)=>s+a.amount,0);
+  const text = lines.join('\n') + `\n\n未精算合計: ${yen(total)}`;
+  try{
+    await navigator.clipboard.writeText(text);
+    alert('コピーしました');
+  }catch(e){
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta);
+    alert('コピーしました');
+  }
+}
+
+/* ====== 買い物リストフォーム ====== */
+function openShoppingListForm(){
+  const box = document.getElementById('modalBox');
+  box.innerHTML = `
+    <div class="mh"><span>リストを追加</span><button id="mClose">✕</button></div>
+    <div class="form-field"><label>リスト名</label><input type="text" id="listName" placeholder="例:スーパー用"></div>
+    <div class="form-actions"><button class="cancel" id="fCancel">キャンセル</button><button class="save" id="fSave">追加</button></div>
+  `;
+  document.getElementById('modalOverlay').classList.add('show');
+  document.getElementById('mClose').onclick = closeModal;
+  document.getElementById('fCancel').onclick = closeModal;
+  document.getElementById('fSave').onclick = async ()=>{
+    const name = document.getElementById('listName').value.trim();
+    if(!name) return;
+    await addDoc(collection(db,'users',state.uid,'shoppingLists'), { name, order: state.shoppingLists.length });
+    closeModal();
+  };
+}
+async function addShoppingItem(){
+  const input = document.getElementById('newItemInput');
+  const name = input.value.trim();
+  if(!name) return;
+  await addDoc(collection(db,'users',state.uid,'shoppingItems'), { listId: state.activeShoppingList, name, done:false });
+  input.value = '';
 }
 </script>
 </body>
