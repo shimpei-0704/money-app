@@ -131,6 +131,7 @@
   .add-btn{ width:100%; margin-top:10px; padding:10px 0; background:var(--accent-bg); border:1px dashed var(--primary); border-radius:var(--radius-sm); color:var(--primary); font-size:13px; cursor:pointer; }
   .cat-row{ cursor:grab; }
   .cat-row.dragging{ opacity:.4; }
+  .heading-block.dragging, .shop-item.dragging{ opacity:.4; }
   .continue-btn{ width:100%; margin-top:14px; padding:12px 0; background:var(--accent-bg); border:1px solid var(--primary); border-radius:var(--radius-sm); color:var(--primary); font-weight:600; font-size:14px; cursor:pointer; }
 
   /* ---- サブ画面共通 ---- */
@@ -157,13 +158,16 @@
   .link-btn{ background:none; border:none; color:var(--primary); font-size:12px; text-decoration:underline; cursor:pointer; padding:0; }
 
   /* ---- 買い物リスト ---- */
-  .shop-list-row{ display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-bottom:1px solid var(--border); cursor:pointer; font-size:14px; }
+  .heading-block{ margin-bottom:18px; }
+  .heading-row{ display:flex; align-items:center; gap:8px; padding:8px 0; border-bottom:1px solid var(--border-strong,var(--border)); cursor:grab; }
+  .heading-items{ min-height:4px; }
+  .add-item-row{ display:flex; gap:8px; margin-top:8px; }
+  .add-item-row input{ flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); color:var(--text); font-size:13px; }
+  .add-item-row button{ padding:0 14px; background:var(--primary); color:#fff; border:none; border-radius:var(--radius-sm); font-size:13px; }
   .shop-item{ display:flex; align-items:center; gap:10px; padding:9px 0; border-bottom:1px solid var(--border); }
   .shop-item input[type=checkbox]{ width:19px; height:19px; accent-color:var(--primary); }
+  .shop-item.done{ opacity:0.6; }
   .shop-item.done span.iname{ text-decoration:line-through; color:var(--text-sub); }
-  .add-item-row{ display:flex; gap:8px; margin-top:12px; }
-  .add-item-row input{ flex:1; padding:10px 12px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); color:var(--text); }
-  .add-item-row button{ padding:0 16px; background:var(--primary); color:#fff; border:none; border-radius:var(--radius-sm); }
 
   /* ---- Form modal (used for goal/fixedcost/category edit) ---- */
   .form-field{ margin-bottom:12px; }
@@ -247,7 +251,7 @@ const state = {
   budgets: [],
   advances: [],
   advanceContacts: [],
-  shoppingLists: [],
+  shoppingHeadings: [],
   shoppingItems: [],
   goal: 0,
   monthStartDay: 1,
@@ -256,8 +260,7 @@ const state = {
   sumRange: null,
   rangePicking: null,
   authMode: 'login',
-  advanceFilter: { person: 'all', status: 'all' },
-  activeShoppingList: null
+  advanceFilter: { person: 'all', status: 'all' }
 };
 const todayStr = () => new Date().toISOString().slice(0,10);
 const yen = n => (n<0?'-':'') + Math.abs(Math.round(n)).toLocaleString('ja-JP') + '円';
@@ -368,8 +371,8 @@ function listenAll(){
     state.advanceContacts = snap.docs.map(d=>({id:d.id, ...d.data()}));
     render();
   }));
-  unsubs.push(onSnapshot(collection(db,'users',state.uid,'shoppingLists'), snap => {
-    state.shoppingLists = snap.docs.map(d=>({id:d.id, ...d.data()})).sort((a,b)=>(a.order||0)-(b.order||0));
+  unsubs.push(onSnapshot(collection(db,'users',state.uid,'shoppingHeadings'), snap => {
+    state.shoppingHeadings = snap.docs.map(d=>({id:d.id, ...d.data()})).sort((a,b)=>(a.order||0)-(b.order||0));
     render();
   }));
   unsubs.push(onSnapshot(collection(db,'users',state.uid,'shoppingItems'), snap => {
@@ -549,7 +552,7 @@ function renderInput(){
     </div>
     ${inputType==='advance' ? `
     <div class="field"><label>相手</label>
-      <select id="inPersonSel"><option value="__new__">+ 新しい相手を入力</option>${state.advanceContacts.map(c=>`<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join('')}</select>
+      <select id="inPersonSel">${state.advanceContacts.map(c=>`<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join('')}<option value="__new__" ${state.advanceContacts.length?'':'selected'}>+ 新しい相手を入力</option></select>
     </div>
     <div class="field" id="inPersonNewWrap"><label>相手の名前</label><input type="text" id="inPersonNew"></div>
     ` : `
@@ -733,35 +736,35 @@ function renderAdvances(){
 
 /* ---------- 買い物リスト ---------- */
 function renderShopping(){
-  if(!state.activeShoppingList){
-    return `
-      <h2 class="screen-title">買い物リスト</h2>
-      ${state.shoppingLists.length ? state.shoppingLists.map(l=>{
-        const cnt = state.shoppingItems.filter(i=>i.listId===l.id && !i.done).length;
-        return `<div class="shop-list-row" data-id="${l.id}">
-          <span class="shop-list-open" data-id="${l.id}" style="flex:1;">${escapeHtml(l.name)}</span>
-          <span style="color:var(--text-sub);margin-right:8px;">残り${cnt}件</span>
-          <span class="icon-btn shop-list-edit" data-id="${l.id}">✎</span>
-        </div>`;
-      }).join('') : '<div class="no-data">リストがありません</div>'}
-      <button class="add-btn" id="addShopList">+ リストを追加</button>
-    `;
-  }
-  const list = state.shoppingLists.find(l=>l.id===state.activeShoppingList);
-  const items = state.shoppingItems.filter(i=>i.listId===state.activeShoppingList);
+  const headings = state.shoppingHeadings;
   return `
-    <div class="back-header"><button id="backToLists">‹</button><h2>${escapeHtml(list?list.name:'')}</h2><span class="icon-btn" id="editListName" style="margin-left:6px;">✎</span></div>
-    ${items.length ? items.map(i=>`
-      <div class="shop-item ${i.done?'done':''}" data-id="${i.id}">
-        <input type="checkbox" class="shop-check" data-id="${i.id}" ${i.done?'checked':''}>
-        <span class="iname shop-item-name" data-id="${i.id}" style="flex:1;">${escapeHtml(i.name)}</span>
-        <span class="icon-btn shop-del" data-id="${i.id}">✕</span>
-      </div>`).join('') : '<div class="no-data">アイテムがありません</div>'}
-    <div class="add-item-row">
-      <input type="text" id="newItemInput" placeholder="追加するもの">
-      <button id="addItemBtn">追加</button>
-    </div>
-    <button class="link-btn" style="margin-top:16px;" id="deleteListBtn">このリストを削除</button>
+    <h2 class="screen-title">買い物リスト</h2>
+    ${headings.length ? headings.map(h=>{
+      const items = state.shoppingItems.filter(i=>i.headingId===h.id)
+        .sort((a,b)=> (a.done - b.done) || ((a.order||0)-(b.order||0)));
+      return `
+      <div class="heading-block" data-id="${h.id}">
+        <div class="heading-row" draggable="true" data-id="${h.id}">
+          <span class="icon-btn" style="cursor:grab;">⠿</span>
+          <span style="flex:1;font-weight:600;">${escapeHtml(h.name)}</span>
+          <span class="icon-btn heading-edit" data-id="${h.id}">✎</span>
+        </div>
+        <div class="heading-items" data-heading="${h.id}">
+          ${items.length ? items.map(i=>`
+            <div class="shop-item ${i.done?'done':''}" draggable="${!i.done}" data-id="${i.id}" data-heading="${h.id}">
+              <span class="icon-btn" style="cursor:grab;font-size:13px;">⠿</span>
+              <input type="checkbox" class="shop-check" data-id="${i.id}" ${i.done?'checked':''}>
+              <span class="iname shop-item-name" data-id="${i.id}" style="flex:1;">${escapeHtml(i.name)}</span>
+              <span class="icon-btn shop-del" data-id="${i.id}">✕</span>
+            </div>`).join('') : ''}
+        </div>
+        <div class="add-item-row">
+          <input type="text" class="newItemInput" data-heading="${h.id}" placeholder="${escapeHtml(h.name)}に追加するもの">
+          <button class="addItemBtn" data-heading="${h.id}">追加</button>
+        </div>
+      </div>`;
+    }).join('') : '<div class="no-data">見出しがありません。まずは「スーパー」「ユニクロ」のような見出しを追加してください</div>'}
+    <button class="add-btn" id="addHeading">+ 見出しを追加</button>
   `;
 }
 
@@ -852,35 +855,26 @@ function attachScreenEvents(){
     });
   }
   if(state.screen==='shopping'){
-    if(!state.activeShoppingList){
-      document.getElementById('addShopList').onclick = ()=>openShoppingListForm(null);
-      document.querySelectorAll('.shop-list-open').forEach(el=>{
-        el.onclick = ()=>{ state.activeShoppingList = el.dataset.id; render(); };
-      });
-      document.querySelectorAll('.shop-list-edit').forEach(b=>{
-        b.onclick = ()=>openShoppingListForm(state.shoppingLists.find(l=>l.id===b.dataset.id));
-      });
-    }else{
-      document.getElementById('backToLists').onclick = ()=>{ state.activeShoppingList=null; render(); };
-      document.getElementById('editListName').onclick = ()=>openShoppingListForm(state.shoppingLists.find(l=>l.id===state.activeShoppingList));
-      document.getElementById('addItemBtn').onclick = addShoppingItem;
-      document.getElementById('newItemInput').addEventListener('keydown', e=>{ if(e.key==='Enter') addShoppingItem(); });
-      document.querySelectorAll('.shop-check').forEach(cb=>{
-        cb.onchange = ()=> updateDoc(doc(db,'users',state.uid,'shoppingItems',cb.dataset.id), { done: cb.checked });
-      });
-      document.querySelectorAll('.shop-item-name').forEach(el=>{
-        el.onclick = ()=>openShoppingItemForm(state.shoppingItems.find(i=>i.id===el.dataset.id));
-      });
-      document.querySelectorAll('.shop-del').forEach(b=>{
-        b.onclick = ()=> deleteDoc(doc(db,'users',state.uid,'shoppingItems',b.dataset.id));
-      });
-      document.getElementById('deleteListBtn').onclick = async ()=>{
-        const items = state.shoppingItems.filter(i=>i.listId===state.activeShoppingList);
-        await Promise.all(items.map(i=>deleteDoc(doc(db,'users',state.uid,'shoppingItems',i.id))));
-        await deleteDoc(doc(db,'users',state.uid,'shoppingLists',state.activeShoppingList));
-        state.activeShoppingList = null; render();
-      };
-    }
+    document.getElementById('addHeading').onclick = ()=>openHeadingForm(null);
+    document.querySelectorAll('.heading-edit').forEach(b=>{
+      b.onclick = ()=>openHeadingForm(state.shoppingHeadings.find(h=>h.id===b.dataset.id));
+    });
+    document.querySelectorAll('.addItemBtn').forEach(b=>{
+      b.onclick = ()=>addShoppingItem(b.dataset.heading);
+    });
+    document.querySelectorAll('.newItemInput').forEach(inp=>{
+      inp.addEventListener('keydown', e=>{ if(e.key==='Enter') addShoppingItem(inp.dataset.heading); });
+    });
+    document.querySelectorAll('.shop-check').forEach(cb=>{
+      cb.onchange = ()=> updateDoc(doc(db,'users',state.uid,'shoppingItems',cb.dataset.id), { done: cb.checked });
+    });
+    document.querySelectorAll('.shop-item-name').forEach(el=>{
+      el.onclick = ()=>openShoppingItemForm(state.shoppingItems.find(i=>i.id===el.dataset.id));
+    });
+    document.querySelectorAll('.shop-del').forEach(b=>{
+      b.onclick = ()=> deleteDoc(doc(db,'users',state.uid,'shoppingItems',b.dataset.id));
+    });
+    attachShoppingDrag();
   }
 }
 
@@ -915,18 +909,14 @@ function openDayModal(day){
     <div class="mh"><span>${m+1}月${day}日の内訳</span><button id="mClose">✕</button></div>
     ${items.length ? items.map(t=>{
       const cat = state.categories.find(c=>c.id===t.category);
-      return `<div class="swipe-row" data-id="${t.id}">
-        <button class="swipe-del">削除</button>
-        <div class="swipe-inner">
-          <span class="cat">${escapeHtml(cat?cat.name:'不明')}${t.memo?'・'+escapeHtml(t.memo):''}</span>
-          <span class="amt ${t.type==='income'?'plus':'minus'}">${t.type==='income'?'+':'-'}${yen(t.amount)}</span>
-        </div>
+      return `<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 4px;border-bottom:1px solid var(--border);">
+        <span style="font-size:13px;">${escapeHtml(cat?cat.name:'不明')}${t.memo?'・'+escapeHtml(t.memo):''}</span>
+        <span style="font-size:13px;font-weight:600;color:${t.type==='income'?'var(--success)':'var(--danger)'}">${t.type==='income'?'+':'-'}${yen(t.amount)}</span>
       </div>`;
     }).join('') : '<div class="no-data">記録がありません</div>'}
   `;
   document.getElementById('modalOverlay').classList.add('show');
   document.getElementById('mClose').onclick = closeModal;
-  attachSwipeDelete();
 }
 function closeModal(){ document.getElementById('modalOverlay').classList.remove('show'); }
 document.getElementById('modalOverlay').addEventListener('click', e=>{ if(e.target.id==='modalOverlay') closeModal(); });
@@ -1191,7 +1181,7 @@ function openAdvanceForm(existing){
   box.innerHTML = `
     <div class="mh"><span>${existing?'立て替えを編集':'立て替えを追加'}</span><button id="mClose">✕</button></div>
     <div class="form-field"><label>相手</label>
-      <select id="aPersonSel"><option value="__new__">+ 新しい相手を入力</option>${state.advanceContacts.map(c=>`<option value="${escapeHtml(c.name)}" ${existing&&existing.person===c.name?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}</select>
+      <select id="aPersonSel">${state.advanceContacts.map(c=>`<option value="${escapeHtml(c.name)}" ${existing&&existing.person===c.name?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}<option value="__new__" ${!existing||!state.advanceContacts.some(c=>c.name===existing.person)?'selected':''}>+ 新しい相手を入力</option></select>
     </div>
     <div class="form-field" id="aPersonNewWrap" style="display:none;"><label>相手の名前</label><input type="text" id="aPersonNew" value="${existing&&!state.advanceContacts.some(c=>c.name===existing.person)?escapeHtml(existing.person):''}"></div>
     <div class="form-field"><label>金額(円)</label><input type="text" id="aAmt" class="amt-input" value="${existing?existing.amount.toLocaleString('ja-JP'):''}" inputmode="numeric"></div>
@@ -1294,11 +1284,11 @@ async function copyAdvanceListText(){
 }
 
 /* ====== 買い物リストフォーム ====== */
-function openShoppingListForm(existing){
+function openHeadingForm(existing){
   const box = document.getElementById('modalBox');
   box.innerHTML = `
-    <div class="mh"><span>${existing?'リスト名を編集':'リストを追加'}</span><button id="mClose">✕</button></div>
-    <div class="form-field"><label>リスト名</label><input type="text" id="listName" placeholder="例:スーパー用" value="${existing?escapeHtml(existing.name):''}"></div>
+    <div class="mh"><span>${existing?'見出しを編集':'見出しを追加'}</span><button id="mClose">✕</button></div>
+    <div class="form-field"><label>見出し名(例:スーパー)</label><input type="text" id="headingName" value="${existing?escapeHtml(existing.name):''}"></div>
     <div class="form-actions">
       <button class="cancel" id="fCancel">キャンセル</button>
       ${existing?'<button class="delete" id="fDelete">削除</button>':''}
@@ -1309,17 +1299,16 @@ function openShoppingListForm(existing){
   document.getElementById('mClose').onclick = closeModal;
   document.getElementById('fCancel').onclick = closeModal;
   if(existing) document.getElementById('fDelete').onclick = async ()=>{
-    const items = state.shoppingItems.filter(i=>i.listId===existing.id);
+    const items = state.shoppingItems.filter(i=>i.headingId===existing.id);
     await Promise.all(items.map(i=>deleteDoc(doc(db,'users',state.uid,'shoppingItems',i.id))));
-    await deleteDoc(doc(db,'users',state.uid,'shoppingLists',existing.id));
-    if(state.activeShoppingList===existing.id) state.activeShoppingList = null;
+    await deleteDoc(doc(db,'users',state.uid,'shoppingHeadings',existing.id));
     closeModal();
   };
   document.getElementById('fSave').onclick = async ()=>{
-    const name = document.getElementById('listName').value.trim();
+    const name = document.getElementById('headingName').value.trim();
     if(!name) return;
-    if(existing) await updateDoc(doc(db,'users',state.uid,'shoppingLists',existing.id), { name });
-    else await addDoc(collection(db,'users',state.uid,'shoppingLists'), { name, order: state.shoppingLists.length });
+    if(existing) await updateDoc(doc(db,'users',state.uid,'shoppingHeadings',existing.id), { name });
+    else await addDoc(collection(db,'users',state.uid,'shoppingHeadings'), { name, order: state.shoppingHeadings.length });
     closeModal();
   };
 }
@@ -1348,12 +1337,68 @@ function openShoppingItemForm(existing){
     closeModal();
   };
 }
-async function addShoppingItem(){
-  const input = document.getElementById('newItemInput');
+async function addShoppingItem(headingId){
+  const input = document.querySelector(`.newItemInput[data-heading="${headingId}"]`);
   const name = input.value.trim();
   if(!name) return;
-  await addDoc(collection(db,'users',state.uid,'shoppingItems'), { listId: state.activeShoppingList, name, done:false });
+  const order = state.shoppingItems.filter(i=>i.headingId===headingId).length;
+  await addDoc(collection(db,'users',state.uid,'shoppingItems'), { headingId, name, done:false, order });
   input.value = '';
+}
+function attachShoppingDrag(){
+  const headingList = document.querySelectorAll('.heading-row');
+  const container = headingList[0] ? headingList[0].closest('#screenArea') : null;
+  let dragHeadingEl = null;
+  headingList.forEach(row=>{
+    row.addEventListener('dragstart', ()=>{ dragHeadingEl = row.closest('.heading-block'); dragHeadingEl.classList.add('dragging'); });
+    row.addEventListener('dragend', async ()=>{
+      dragHeadingEl.classList.remove('dragging');
+      const ids = [...document.querySelectorAll('.heading-block')].map(el=>el.dataset.id);
+      await Promise.all(ids.map((id,idx)=> updateDoc(doc(db,'users',state.uid,'shoppingHeadings',id), {order:idx}) ));
+    });
+  });
+  if(container){
+    container.addEventListener('dragover', e=>{
+      if(!dragHeadingEl) return;
+      const after = getBlockAfterElement(container, e.clientY);
+      if(after==null) container.appendChild(dragHeadingEl); else container.insertBefore(dragHeadingEl, after);
+    });
+  }
+  document.querySelectorAll('.heading-items').forEach(list=>{
+    let dragItemEl = null;
+    list.querySelectorAll('.shop-item[draggable="true"]').forEach(row=>{
+      row.addEventListener('dragstart', ()=>{ dragItemEl = row; row.classList.add('dragging'); });
+      row.addEventListener('dragend', async ()=>{
+        row.classList.remove('dragging');
+        const ids = [...list.querySelectorAll('.shop-item')].map(r=>r.dataset.id);
+        await Promise.all(ids.map((id,idx)=> updateDoc(doc(db,'users',state.uid,'shoppingItems',id), {order:idx}) ));
+      });
+      row.addEventListener('dragover', e=>{
+        e.preventDefault(); e.stopPropagation();
+        if(!dragItemEl) return;
+        const after = getItemAfterElement(list, e.clientY);
+        if(after==null) list.appendChild(dragItemEl); else list.insertBefore(dragItemEl, after);
+      });
+    });
+  });
+}
+function getBlockAfterElement(container, y){
+  const els = [...container.querySelectorAll('.heading-block:not(.dragging)')];
+  return els.reduce((closest, child)=>{
+    const box = child.getBoundingClientRect();
+    const offset = y - box.top - box.height/2;
+    if(offset < 0 && offset > closest.offset) return {offset, element: child};
+    else return closest;
+  }, {offset: -Infinity}).element;
+}
+function getItemAfterElement(container, y){
+  const els = [...container.querySelectorAll('.shop-item:not(.dragging)')];
+  return els.reduce((closest, child)=>{
+    const box = child.getBoundingClientRect();
+    const offset = y - box.top - box.height/2;
+    if(offset < 0 && offset > closest.offset) return {offset, element: child};
+    else return closest;
+  }, {offset: -Infinity}).element;
 }
 </script>
 </body>
