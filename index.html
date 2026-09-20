@@ -53,10 +53,10 @@
 
   /* ---- Tab bar ---- */
   #tabbar{ position:fixed; bottom:0; left:0; right:0; background:var(--surface); border-top:1px solid var(--border); display:flex; padding-bottom:env(safe-area-inset-bottom,0px); max-width:480px; margin:0 auto; }
-  .tab-btn{ flex:1; border:none; background:none; padding:9px 0 8px; display:flex; flex-direction:column; align-items:center; gap:3px; color:var(--text-sub); cursor:pointer; }
+  .tab-btn{ flex:1; border:none; background:none; padding:8px 0 7px; display:flex; flex-direction:column; align-items:center; gap:2px; color:var(--text-sub); cursor:pointer; min-width:0; }
+  .tab-btn svg{ width:19px; height:19px; }
+  .tab-btn span{ font-size:9px; white-space:nowrap; }
   .tab-btn.active{ color:var(--primary); }
-  .tab-btn svg{ width:21px; height:21px; }
-  .tab-btn span{ font-size:10px; }
 
   /* ---- Cards ---- */
   .card{ background:var(--surface); border-radius:var(--radius); padding:16px; margin-bottom:12px; border:1px solid var(--border); }
@@ -108,6 +108,7 @@
   .type-toggle button{ flex:1; padding:10px 0; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); font-weight:600; font-size:14px; cursor:pointer; color:var(--text-sub); }
   .type-toggle button.active.expense{ background:var(--danger-bg); border-color:var(--danger-strong); color:var(--danger); }
   .type-toggle button.active.income{ background:var(--success-bg); border-color:var(--success); color:var(--success); }
+  .type-toggle button.active.advance{ background:var(--accent-bg); border-color:var(--primary); color:var(--primary); }
   .field select{ width:100%; padding:12px 14px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); color:var(--text); }
 
   /* ---- Summary ---- */
@@ -202,6 +203,7 @@
       <button class="tab-btn" data-screen="calendar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg><span>カレンダー</span></button>
       <button class="tab-btn" data-screen="input"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg><span>入力</span></button>
       <button class="tab-btn" data-screen="summary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V10M12 20V4M20 20v-7"/></svg><span>集計</span></button>
+      <button class="tab-btn" data-screen="shopping"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2l1.5 6M18 2l-1.5 6M3.5 8h17l-1.6 10.3a2 2 0 01-2 1.7H7.1a2 2 0 01-2-1.7L3.5 8z"/></svg><span>買い物</span></button>
       <button class="tab-btn" data-screen="edit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg><span>編集</span></button>
     </div>
   </div>
@@ -395,7 +397,6 @@ function render(){
   if(state.screen==='input') area.innerHTML = renderInput();
   if(state.screen==='summary') area.innerHTML = renderSummary();
   if(state.screen==='edit') area.innerHTML = renderEdit();
-  if(state.screen==='budget') area.innerHTML = renderBudget();
   if(state.screen==='advances') area.innerHTML = renderAdvances();
   if(state.screen==='shopping') area.innerHTML = renderShopping();
   attachScreenEvents();
@@ -429,6 +430,10 @@ function renderHome(){
     return {...f, days, nextDate: next};
   }).sort((a,b)=>a.days-b.days);
 
+  const budgetRows = computeBudgetRows();
+  const unsettledAdv = state.advances.filter(a=>!a.settled);
+  const advTotal = unsettledAdv.reduce((s,a)=>s+a.amount,0);
+
   return `
     <h2 class="screen-title">ホーム</h2>
     <div class="card">
@@ -447,6 +452,22 @@ function renderHome(){
     <div class="row2">
       <div class="card"><div class="card-label">今月の収支</div><div class="card-value" style="color:${monthBalance>=0?'var(--success)':'var(--danger)'}">${monthBalance>=0?'+':''}${yen(monthBalance)}</div></div>
       <div class="card"><div class="card-label">使える残り</div><div class="card-value">${yen(allBalance)}</div></div>
+    </div>
+    ${budgetRows.length ? `
+    <div class="card">
+      <div class="card-label">予算の状況</div>
+      ${budgetRows.map(r=>`
+        <div class="budget-row">
+          <div class="bh"><span>${escapeHtml(r.name)}</span><span>${yen(r.spent)} / ${yen(r.amount)}</span></div>
+          <div class="budget-track"><div class="budget-fill" style="width:${Math.min(100,r.pct)}%;background:${r.color}"></div></div>
+        </div>`).join('')}
+    </div>` : ''}
+    <div class="card" id="advSummaryCard" style="cursor:pointer;">
+      <div class="card-label">立て替え(未精算)</div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;">
+        <span class="card-value" style="color:${unsettledAdv.length?'var(--danger)':'var(--text)'}">${yen(advTotal)}</span>
+        <span style="font-size:12px;color:var(--text-sub);">${unsettledAdv.length}件 ›</span>
+      </div>
     </div>
     <div class="card">
       <div class="card-label">固定費の支払い予定</div>
@@ -524,10 +545,18 @@ function renderInput(){
     <div class="type-toggle">
       <button class="expense ${inputType==='expense'?'active':''}" data-type="expense">支出</button>
       <button class="income ${inputType==='income'?'active':''}" data-type="income">収入</button>
+      <button class="advance ${inputType==='advance'?'active':''}" data-type="advance">立替</button>
     </div>
+    ${inputType==='advance' ? `
+    <div class="field"><label>相手</label>
+      <select id="inPersonSel"><option value="__new__">+ 新しい相手を入力</option>${state.advanceContacts.map(c=>`<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join('')}</select>
+    </div>
+    <div class="field" id="inPersonNewWrap"><label>相手の名前</label><input type="text" id="inPersonNew"></div>
+    ` : `
     <div class="field"><label>カテゴリ</label>
       <select id="inCat">${cats.map(c=>`<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('') || '<option value="">カテゴリがありません</option>'}</select>
     </div>
+    `}
     <div class="field"><label>金額</label><input type="text" id="inAmt" class="amt-input" placeholder="0" inputmode="numeric"></div>
     <div class="field"><label>日付</label><input type="date" id="inDate" value="${todayStr()}"></div>
     <div class="field"><label>メモ</label><input type="text" id="inMemo" placeholder="任意"></div>
@@ -625,10 +654,14 @@ function renderEdit(){
     <div class="list-row" id="goalRow" style="cursor:pointer;"><span>貯蓄目標額</span><span style="color:var(--text-sub);">${state.goal>0?yen(state.goal):'未設定'} ›</span></div>
     <div class="list-row" id="periodRow" style="cursor:pointer;"><span>「今月」の起算日</span><span style="color:var(--text-sub);">毎月${state.monthStartDay||1}日 ›</span></div>
 
-    <div class="section-label">その他の機能</div>
-    <div class="list-row" id="gotoBudget" style="cursor:pointer;"><span>予算管理</span><span style="color:var(--text-sub);">›</span></div>
-    <div class="list-row" id="gotoAdvances" style="cursor:pointer;"><span>立て替え管理</span><span style="color:var(--text-sub);">›</span></div>
-    <div class="list-row" id="gotoShopping" style="cursor:pointer;"><span>買い物リスト</span><span style="color:var(--text-sub);">›</span></div>
+    <div class="section-label">予算設定</div>
+    ${state.budgets.map(b=>{
+      const cat = state.categories.find(c=>c.id===b.categoryId);
+      return `<div class="list-row budget-edit-row" data-id="${b.id}" style="cursor:pointer;">
+        <span>${escapeHtml(cat?cat.name:'不明')}・${yen(b.amount)}/期間</span><span class="icon-btn">✎</span>
+      </div>`;
+    }).join('')}
+    <button class="add-btn" id="addBudget">+ 予算を追加</button>
 
     <div class="section-label">固定費登録</div>
     ${state.fixedCosts.map(f=>`
@@ -649,12 +682,11 @@ function renderEdit(){
     <button class="btn-secondary" id="logoutBtn">ログアウト</button>
   `;
 }
-/* ---------- 予算管理 ---------- */
-function renderBudget(){
+/* ---------- 予算(ホーム画面表示用) ---------- */
+function computeBudgetRows(){
   const period = getCurrentPeriod();
-  const expCats = state.categories.filter(c=>c.type==='expense');
-  const rows = state.budgets.map(b=>{
-    const cat = expCats.find(c=>c.id===b.categoryId);
+  return state.budgets.map(b=>{
+    const cat = state.categories.find(c=>c.id===b.categoryId);
     const spent = state.transactions.filter(t=>t.type==='expense' && t.category===b.categoryId && t.date>=period.start && t.date<period.end).reduce((s,t)=>s+t.amount,0);
     const pct = b.amount>0 ? spent/b.amount*100 : 0;
     let color = 'var(--primary)';
@@ -662,16 +694,6 @@ function renderBudget(){
     else if(pct>=80) color = '#FFD23F';
     return { id:b.id, name: cat?cat.name:'不明なカテゴリ', amount:b.amount, spent, pct, color };
   });
-  return `
-    <div class="back-header"><button id="backBtn">‹</button><h2>予算管理</h2></div>
-    <div class="card-label">${period.startDate.getMonth()+1}/${period.startDate.getDate()} 〜 ${period.endDate.getMonth()+1}/${period.endDate.getDate()-1}の予算</div>
-    ${rows.length ? rows.map(r=>`
-      <div class="budget-row budget-item" data-id="${r.id}">
-        <div class="bh"><span>${escapeHtml(r.name)}</span><span>${yen(r.spent)} / ${yen(r.amount)}</span></div>
-        <div class="budget-track"><div class="budget-fill" style="width:${Math.min(100,r.pct)}%;background:${r.color}"></div></div>
-      </div>`).join('') : '<div class="no-data">予算が設定されていません</div>'}
-    <button class="add-btn" id="addBudget">+ 予算を追加</button>
-  `;
 }
 
 /* ---------- 立て替え管理 ---------- */
@@ -713,10 +735,14 @@ function renderAdvances(){
 function renderShopping(){
   if(!state.activeShoppingList){
     return `
-      <div class="back-header"><button id="backBtn">‹</button><h2>買い物リスト</h2></div>
+      <h2 class="screen-title">買い物リスト</h2>
       ${state.shoppingLists.length ? state.shoppingLists.map(l=>{
         const cnt = state.shoppingItems.filter(i=>i.listId===l.id && !i.done).length;
-        return `<div class="shop-list-row" data-id="${l.id}"><span>${escapeHtml(l.name)}</span><span style="color:var(--text-sub);">残り${cnt}件 ›</span></div>`;
+        return `<div class="shop-list-row" data-id="${l.id}">
+          <span class="shop-list-open" data-id="${l.id}" style="flex:1;">${escapeHtml(l.name)}</span>
+          <span style="color:var(--text-sub);margin-right:8px;">残り${cnt}件</span>
+          <span class="icon-btn shop-list-edit" data-id="${l.id}">✎</span>
+        </div>`;
       }).join('') : '<div class="no-data">リストがありません</div>'}
       <button class="add-btn" id="addShopList">+ リストを追加</button>
     `;
@@ -724,11 +750,11 @@ function renderShopping(){
   const list = state.shoppingLists.find(l=>l.id===state.activeShoppingList);
   const items = state.shoppingItems.filter(i=>i.listId===state.activeShoppingList);
   return `
-    <div class="back-header"><button id="backToLists">‹</button><h2>${escapeHtml(list?list.name:'')}</h2></div>
+    <div class="back-header"><button id="backToLists">‹</button><h2>${escapeHtml(list?list.name:'')}</h2><span class="icon-btn" id="editListName" style="margin-left:6px;">✎</span></div>
     ${items.length ? items.map(i=>`
       <div class="shop-item ${i.done?'done':''}" data-id="${i.id}">
         <input type="checkbox" class="shop-check" data-id="${i.id}" ${i.done?'checked':''}>
-        <span class="iname" style="flex:1;">${escapeHtml(i.name)}</span>
+        <span class="iname shop-item-name" data-id="${i.id}" style="flex:1;">${escapeHtml(i.name)}</span>
         <span class="icon-btn shop-del" data-id="${i.id}">✕</span>
       </div>`).join('') : '<div class="no-data">アイテムがありません</div>'}
     <div class="add-item-row">
@@ -750,6 +776,10 @@ function escapeHtml(s){ return String(s??'').replace(/[&<>"']/g, m=>({'&':'&amp;
 
 /* ====== イベント付与 ====== */
 function attachScreenEvents(){
+  if(state.screen==='home'){
+    const advCard = document.getElementById('advSummaryCard');
+    if(advCard) advCard.onclick = ()=>{ state.screen='advances'; render(); };
+  }
   if(state.screen==='calendar'){
     document.getElementById('calPrev').onclick = ()=>{ state.calMonth.setMonth(state.calMonth.getMonth()-1); render(); };
     document.getElementById('calNext').onclick = ()=>{ state.calMonth.setMonth(state.calMonth.getMonth()+1); render(); };
@@ -762,6 +792,12 @@ function attachScreenEvents(){
     document.querySelectorAll('.type-toggle button').forEach(b=>{
       b.onclick = ()=>{ inputType = b.dataset.type; render(); };
     });
+    if(inputType==='advance'){
+      const sel = document.getElementById('inPersonSel');
+      const wrap = document.getElementById('inPersonNewWrap');
+      wrap.style.display = sel.value==='__new__' ? 'block' : 'none';
+      sel.onchange = e=>{ wrap.style.display = e.target.value==='__new__' ? 'block' : 'none'; };
+    }
     document.getElementById('inSave').onclick = ()=>saveTransaction(false);
     document.getElementById('inSaveContinue').onclick = ()=>saveTransaction(true);
   }
@@ -777,9 +813,10 @@ function attachScreenEvents(){
   if(state.screen==='edit'){
     document.getElementById('goalRow').onclick = openGoalForm;
     document.getElementById('periodRow').onclick = openPeriodForm;
-    document.getElementById('gotoBudget').onclick = ()=>{ state.screen='budget'; render(); };
-    document.getElementById('gotoAdvances').onclick = ()=>{ state.screen='advances'; render(); };
-    document.getElementById('gotoShopping').onclick = ()=>{ state.screen='shopping'; render(); };
+    document.getElementById('addBudget').onclick = ()=>openBudgetForm(null);
+    document.querySelectorAll('.budget-edit-row').forEach(r=>{
+      r.onclick = ()=>openBudgetForm(state.budgets.find(b=>b.id===r.dataset.id));
+    });
     document.getElementById('addFixed').onclick = ()=>openFixedForm(null);
     document.querySelectorAll('.fixed-edit-row').forEach(r=>{
       r.onclick = ()=>openFixedForm(state.fixedCosts.find(f=>f.id===r.dataset.id));
@@ -804,7 +841,7 @@ function attachScreenEvents(){
     });
   }
   if(state.screen==='advances'){
-    document.getElementById('backBtn').onclick = ()=>{ state.screen='edit'; render(); };
+    document.getElementById('backBtn').onclick = ()=>{ state.screen='home'; render(); };
     document.getElementById('advPersonFilter').onchange = e=>{ state.advanceFilter.person = e.target.value; render(); };
     document.getElementById('advStatusFilter').onchange = e=>{ state.advanceFilter.status = e.target.value; render(); };
     document.getElementById('addAdvance').onclick = ()=>openAdvanceForm(null);
@@ -816,17 +853,23 @@ function attachScreenEvents(){
   }
   if(state.screen==='shopping'){
     if(!state.activeShoppingList){
-      document.getElementById('backBtn').onclick = ()=>{ state.screen='edit'; render(); };
-      document.getElementById('addShopList').onclick = openShoppingListForm;
-      document.querySelectorAll('.shop-list-row').forEach(r=>{
-        r.onclick = ()=>{ state.activeShoppingList = r.dataset.id; render(); };
+      document.getElementById('addShopList').onclick = ()=>openShoppingListForm(null);
+      document.querySelectorAll('.shop-list-open').forEach(el=>{
+        el.onclick = ()=>{ state.activeShoppingList = el.dataset.id; render(); };
+      });
+      document.querySelectorAll('.shop-list-edit').forEach(b=>{
+        b.onclick = ()=>openShoppingListForm(state.shoppingLists.find(l=>l.id===b.dataset.id));
       });
     }else{
       document.getElementById('backToLists').onclick = ()=>{ state.activeShoppingList=null; render(); };
+      document.getElementById('editListName').onclick = ()=>openShoppingListForm(state.shoppingLists.find(l=>l.id===state.activeShoppingList));
       document.getElementById('addItemBtn').onclick = addShoppingItem;
       document.getElementById('newItemInput').addEventListener('keydown', e=>{ if(e.key==='Enter') addShoppingItem(); });
       document.querySelectorAll('.shop-check').forEach(cb=>{
         cb.onchange = ()=> updateDoc(doc(db,'users',state.uid,'shoppingItems',cb.dataset.id), { done: cb.checked });
+      });
+      document.querySelectorAll('.shop-item-name').forEach(el=>{
+        el.onclick = ()=>openShoppingItemForm(state.shoppingItems.find(i=>i.id===el.dataset.id));
       });
       document.querySelectorAll('.shop-del').forEach(b=>{
         b.onclick = ()=> deleteDoc(doc(db,'users',state.uid,'shoppingItems',b.dataset.id));
@@ -913,15 +956,29 @@ function attachSwipeDelete(){
 
 /* ---- 入力保存 ---- */
 async function saveTransaction(keepGoing){
-  const cat = document.getElementById('inCat').value;
   const amt = parseAmt(document.getElementById('inAmt').value);
   const date = document.getElementById('inDate').value;
   const memo = document.getElementById('inMemo').value;
   const msg = document.getElementById('inMsg');
-  if(!cat){ msg.textContent = 'カテゴリを選択してください'; return; }
   if(!amt || amt<=0){ msg.textContent = '金額を正しく入力してください'; return; }
   if(!date){ msg.textContent = '日付を選択してください'; return; }
-  await addDoc(collection(db,'users',state.uid,'transactions'), { type:inputType, category:cat, amount:amt, date, memo, createdAt:Date.now() });
+
+  if(inputType==='advance'){
+    let person = document.getElementById('inPersonSel').value;
+    if(person==='__new__'){
+      person = document.getElementById('inPersonNew').value.trim();
+      if(!person){ msg.textContent = '相手の名前を入力してください'; return; }
+      if(!state.advanceContacts.some(c=>c.name===person)){
+        await addDoc(collection(db,'users',state.uid,'advanceContacts'), { name: person });
+      }
+    }
+    await addDoc(collection(db,'users',state.uid,'advances'), { person, amount:amt, date, memo, settled:false, receiptImg:null });
+  }else{
+    const cat = document.getElementById('inCat').value;
+    if(!cat){ msg.textContent = 'カテゴリを選択してください'; return; }
+    await addDoc(collection(db,'users',state.uid,'transactions'), { type:inputType, category:cat, amount:amt, date, memo, createdAt:Date.now() });
+  }
+
   if(keepGoing){
     document.getElementById('inAmt').value='';
     document.getElementById('inMemo').value='';
@@ -1136,7 +1193,7 @@ function openAdvanceForm(existing){
     <div class="form-field"><label>相手</label>
       <select id="aPersonSel"><option value="__new__">+ 新しい相手を入力</option>${state.advanceContacts.map(c=>`<option value="${escapeHtml(c.name)}" ${existing&&existing.person===c.name?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}</select>
     </div>
-    <div class="form-field" id="aPersonNewWrap" style="display:none;"><label>相手の名前</label><input type="text" id="aPersonNew"></div>
+    <div class="form-field" id="aPersonNewWrap" style="display:none;"><label>相手の名前</label><input type="text" id="aPersonNew" value="${existing&&!state.advanceContacts.some(c=>c.name===existing.person)?escapeHtml(existing.person):''}"></div>
     <div class="form-field"><label>金額(円)</label><input type="text" id="aAmt" class="amt-input" value="${existing?existing.amount.toLocaleString('ja-JP'):''}" inputmode="numeric"></div>
     <div class="form-field"><label>日付</label><input type="date" id="aDate" value="${existing?existing.date:todayStr()}"></div>
     <div class="form-field"><label>メモ</label><input type="text" id="aMemo" value="${existing?escapeHtml(existing.memo||''):''}"></div>
@@ -1144,6 +1201,7 @@ function openAdvanceForm(existing){
       <div id="aReceiptPreview" style="margin-top:8px;">${receiptData?`<img src="${receiptData}" style="max-width:100px;border-radius:8px;">`:''}</div>
     </div>
     <div class="form-field"><label><input type="checkbox" id="aSettled" ${existing&&existing.settled?'checked':''} style="width:auto;margin-right:6px;">精算済みにする</label></div>
+    <div id="aErr" style="color:var(--danger);font-size:12px;min-height:16px;"></div>
     <div class="form-actions">
       <button class="cancel" id="fCancel">キャンセル</button>
       ${existing?'<button class="delete" id="fDelete">削除</button>':''}
@@ -1153,8 +1211,11 @@ function openAdvanceForm(existing){
   document.getElementById('modalOverlay').classList.add('show');
   document.getElementById('mClose').onclick = closeModal;
   document.getElementById('fCancel').onclick = closeModal;
-  document.getElementById('aPersonSel').onchange = e=>{
-    document.getElementById('aPersonNewWrap').style.display = e.target.value==='__new__' ? 'block' : 'none';
+  const personSel = document.getElementById('aPersonSel');
+  const personNewWrap = document.getElementById('aPersonNewWrap');
+  personNewWrap.style.display = personSel.value==='__new__' ? 'block' : 'none';
+  personSel.onchange = e=>{
+    personNewWrap.style.display = e.target.value==='__new__' ? 'block' : 'none';
   };
   document.getElementById('aReceipt').onchange = async e=>{
     const f = e.target.files[0];
@@ -1166,10 +1227,11 @@ function openAdvanceForm(existing){
     await deleteDoc(doc(db,'users',state.uid,'advances',existing.id)); closeModal();
   };
   document.getElementById('fSave').onclick = async ()=>{
+    const errEl = document.getElementById('aErr');
     let person = document.getElementById('aPersonSel').value;
     if(person==='__new__'){
       person = document.getElementById('aPersonNew').value.trim();
-      if(!person) return;
+      if(!person){ errEl.textContent = '相手の名前を入力してください'; return; }
       if(!state.advanceContacts.some(c=>c.name===person)){
         await addDoc(collection(db,'users',state.uid,'advanceContacts'), { name: person });
       }
@@ -1182,7 +1244,8 @@ function openAdvanceForm(existing){
       settled: document.getElementById('aSettled').checked,
       receiptImg: receiptData || null
     };
-    if(!data.person || data.amount<=0 || !data.date) return;
+    if(data.amount<=0){ errEl.textContent = '金額を正しく入力してください'; return; }
+    if(!data.date){ errEl.textContent = '日付を選択してください'; return; }
     if(existing) await updateDoc(doc(db,'users',state.uid,'advances',existing.id), data);
     else await addDoc(collection(db,'users',state.uid,'advances'), data);
     closeModal();
@@ -1231,20 +1294,57 @@ async function copyAdvanceListText(){
 }
 
 /* ====== 買い物リストフォーム ====== */
-function openShoppingListForm(){
+function openShoppingListForm(existing){
   const box = document.getElementById('modalBox');
   box.innerHTML = `
-    <div class="mh"><span>リストを追加</span><button id="mClose">✕</button></div>
-    <div class="form-field"><label>リスト名</label><input type="text" id="listName" placeholder="例:スーパー用"></div>
-    <div class="form-actions"><button class="cancel" id="fCancel">キャンセル</button><button class="save" id="fSave">追加</button></div>
+    <div class="mh"><span>${existing?'リスト名を編集':'リストを追加'}</span><button id="mClose">✕</button></div>
+    <div class="form-field"><label>リスト名</label><input type="text" id="listName" placeholder="例:スーパー用" value="${existing?escapeHtml(existing.name):''}"></div>
+    <div class="form-actions">
+      <button class="cancel" id="fCancel">キャンセル</button>
+      ${existing?'<button class="delete" id="fDelete">削除</button>':''}
+      <button class="save" id="fSave">${existing?'保存':'追加'}</button>
+    </div>
   `;
   document.getElementById('modalOverlay').classList.add('show');
   document.getElementById('mClose').onclick = closeModal;
   document.getElementById('fCancel').onclick = closeModal;
+  if(existing) document.getElementById('fDelete').onclick = async ()=>{
+    const items = state.shoppingItems.filter(i=>i.listId===existing.id);
+    await Promise.all(items.map(i=>deleteDoc(doc(db,'users',state.uid,'shoppingItems',i.id))));
+    await deleteDoc(doc(db,'users',state.uid,'shoppingLists',existing.id));
+    if(state.activeShoppingList===existing.id) state.activeShoppingList = null;
+    closeModal();
+  };
   document.getElementById('fSave').onclick = async ()=>{
     const name = document.getElementById('listName').value.trim();
     if(!name) return;
-    await addDoc(collection(db,'users',state.uid,'shoppingLists'), { name, order: state.shoppingLists.length });
+    if(existing) await updateDoc(doc(db,'users',state.uid,'shoppingLists',existing.id), { name });
+    else await addDoc(collection(db,'users',state.uid,'shoppingLists'), { name, order: state.shoppingLists.length });
+    closeModal();
+  };
+}
+function openShoppingItemForm(existing){
+  if(!existing) return;
+  const box = document.getElementById('modalBox');
+  box.innerHTML = `
+    <div class="mh"><span>アイテムを編集</span><button id="mClose">✕</button></div>
+    <div class="form-field"><label>内容</label><input type="text" id="itemName" value="${escapeHtml(existing.name)}"></div>
+    <div class="form-actions">
+      <button class="cancel" id="fCancel">キャンセル</button>
+      <button class="delete" id="fDelete">削除</button>
+      <button class="save" id="fSave">保存</button>
+    </div>
+  `;
+  document.getElementById('modalOverlay').classList.add('show');
+  document.getElementById('mClose').onclick = closeModal;
+  document.getElementById('fCancel').onclick = closeModal;
+  document.getElementById('fDelete').onclick = async ()=>{
+    await deleteDoc(doc(db,'users',state.uid,'shoppingItems',existing.id)); closeModal();
+  };
+  document.getElementById('fSave').onclick = async ()=>{
+    const name = document.getElementById('itemName').value.trim();
+    if(!name) return;
+    await updateDoc(doc(db,'users',state.uid,'shoppingItems',existing.id), { name });
     closeModal();
   };
 }
