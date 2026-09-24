@@ -265,7 +265,8 @@ const state = {
   listFilter: { start:'', end:'', expense:true, income:true, advance:true },
   listFilterManual: false
 };
-const todayStr = () => new Date().toISOString().slice(0,10);
+const toLocalStr = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+const todayStr = () => toLocalStr(new Date());
 const yen = n => (n<0?'-':'') + Math.abs(Math.round(n)).toLocaleString('ja-JP') + '円';
 const parseAmt = v => parseFloat(String(v||'').replace(/[^0-9.]/g,'')) || 0;
 document.addEventListener('input', e=>{
@@ -418,8 +419,7 @@ function getCurrentPeriod(){
   if(now.getDate() >= s) start = new Date(now.getFullYear(), now.getMonth(), s);
   else start = new Date(now.getFullYear(), now.getMonth()-1, s);
   const end = new Date(start.getFullYear(), start.getMonth()+1, s);
-  const toStr = d => d.toISOString().slice(0,10);
-  return { start: toStr(start), end: toStr(end), startDate: start, endDate: end };
+  return { start: toLocalStr(start), end: toLocalStr(end), startDate: start, endDate: end };
 }
 function renderHome(){
   const period = getCurrentPeriod();
@@ -441,8 +441,16 @@ function renderHome(){
 
   const budgetRows = computeBudgetRows();
   const remainingBudgetTotal = budgetRows.reduce((s,r)=> s + Math.max(0, r.amount - r.spent), 0);
-  const projectedExpense = monthExpense + remainingBudgetTotal;
-  const projectedBalance = allBalance - remainingBudgetTotal;
+  const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const remainingFixedTotal = state.fixedCosts.reduce((sum,f)=>{
+    const occ = f.day >= period.startDate.getDate()
+      ? new Date(period.startDate.getFullYear(), period.startDate.getMonth(), f.day)
+      : new Date(period.startDate.getFullYear(), period.startDate.getMonth()+1, f.day);
+    return occ >= todayMidnight ? sum + f.amount : sum;
+  }, 0);
+  const remainingTotal = remainingBudgetTotal + remainingFixedTotal;
+  const projectedExpense = monthExpense + remainingTotal;
+  const projectedBalance = allBalance - remainingTotal;
   const unsettledAdv = state.advances.filter(a=>!a.settled);
   const advTotal = unsettledAdv.reduce((s,a)=>s+a.amount,0);
 
@@ -471,7 +479,7 @@ function renderHome(){
       <div class="card">
         <div class="card-label">今月の支出</div>
         <div class="card-value" style="color:var(--danger)">-${yen(monthExpense)}</div>
-        <div style="font-size:11px;color:var(--text-sub);margin-top:2px;">予算消化時見込み:${yen(projectedExpense)}</div>
+        <div style="font-size:11px;color:var(--text-sub);margin-top:2px;">予算・固定費消化時見込み:${yen(projectedExpense)}</div>
       </div>
     </div>
     <div class="row2">
@@ -479,7 +487,7 @@ function renderHome(){
       <div class="card">
         <div class="card-label">使える残り</div>
         <div class="card-value">${yen(allBalance)}</div>
-        <div style="font-size:11px;color:var(--text-sub);margin-top:2px;">予算消化時見込み:${yen(projectedBalance)}</div>
+        <div style="font-size:11px;color:var(--text-sub);margin-top:2px;">予算・固定費消化時見込み:${yen(projectedBalance)}</div>
       </div>
     </div>
     ${budgetRows.length ? `
@@ -522,10 +530,10 @@ function renderCalendar(){
   const dayTotals = {}, dayIncome = {};
   state.transactions.forEach(t=>{
     if(state.calFilter.category!=='all' && t.category!==state.calFilter.category) return;
-    const d = new Date(t.date);
-    if(d.getFullYear()!==y || d.getMonth()!==m) return;
-    if(t.type==='expense') dayTotals[d.getDate()] = (dayTotals[d.getDate()]||0) + t.amount;
-    else dayIncome[d.getDate()] = (dayIncome[d.getDate()]||0) + t.amount;
+    const [ty,tm,td] = t.date.split('-').map(Number);
+    if(ty!==y || (tm-1)!==m) return;
+    if(t.type==='expense') dayTotals[td] = (dayTotals[td]||0) + t.amount;
+    else dayIncome[td] = (dayIncome[td]||0) + t.amount;
   });
 
   let cells = '';
@@ -600,7 +608,7 @@ function renderSummary(){
   if(!state.sumRangeManual){
     const period = getCurrentPeriod();
     const endInclusive = new Date(period.endDate); endInclusive.setDate(endInclusive.getDate()-1);
-    state.sumRange = { start: period.start, end: endInclusive.toISOString().slice(0,10) };
+    state.sumRange = { start: period.start, end: toLocalStr(endInclusive) };
   }
   const {start,end} = state.sumRange;
   const inRange = t => t.date>=start && t.date<=end;
@@ -625,8 +633,9 @@ function renderSummary(){
 
   // 日別の収支推移(期間内)
   const days = [];
-  let d0 = new Date(start), d1 = new Date(end);
-  for(let d=new Date(d0); d<=d1; d.setDate(d.getDate()+1)) days.push(d.toISOString().slice(0,10));
+  const [sy,sm,sd] = start.split('-').map(Number), [ey,em,ed] = end.split('-').map(Number);
+  let d0 = new Date(sy,sm-1,sd), d1 = new Date(ey,em-1,ed);
+  for(let d=new Date(d0); d<=d1; d.setDate(d.getDate()+1)) days.push(toLocalStr(d));
   const dayVals = days.map(day=>{
     const exp = state.transactions.filter(t=>t.type==='expense'&&t.date===day).reduce((s,t)=>s+t.amount,0);
     const inc = state.transactions.filter(t=>t.type==='income'&&t.date===day).reduce((s,t)=>s+t.amount,0);
@@ -804,7 +813,7 @@ function renderList(){
   if(!state.listFilterManual){
     const period = getCurrentPeriod();
     const endInclusive = new Date(period.endDate); endInclusive.setDate(endInclusive.getDate()-1);
-    f.start = period.start; f.end = endInclusive.toISOString().slice(0,10);
+    f.start = period.start; f.end = toLocalStr(endInclusive);
   }
   let records = [];
   state.transactions.forEach(t=>{
