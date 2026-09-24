@@ -50,12 +50,13 @@
   #shell{ display:none; flex-direction:column; flex:1; min-height:100vh; }
   #screenArea{ flex:1; overflow-y:auto; padding:18px 16px 90px; }
   h2.screen-title{ font-size:20px; font-weight:700; margin:0 0 16px; }
+  #screenArea > h2.screen-title:not(:first-child){ margin-top:30px; padding-top:22px; border-top:1px solid var(--border); }
 
   /* ---- Tab bar ---- */
   #tabbar{ position:fixed; bottom:0; left:0; right:0; background:var(--surface); border-top:1px solid var(--border); display:flex; padding-bottom:env(safe-area-inset-bottom,0px); max-width:480px; margin:0 auto; }
-  .tab-btn{ flex:1; border:none; background:none; padding:7px 0 6px; display:flex; flex-direction:column; align-items:center; gap:2px; color:var(--text-sub); cursor:pointer; min-width:0; }
-  .tab-btn svg{ width:17px; height:17px; }
-  .tab-btn span{ font-size:8px; white-space:nowrap; }
+  .tab-btn{ flex:1; border:none; background:none; padding:9px 0 8px; display:flex; flex-direction:column; align-items:center; gap:3px; color:var(--text-sub); cursor:pointer; min-width:0; }
+  .tab-btn svg{ width:21px; height:21px; }
+  .tab-btn span{ font-size:10px; white-space:nowrap; }
   .tab-btn.active{ color:var(--primary); }
 
   /* ---- Cards ---- */
@@ -204,11 +205,9 @@
 
     <div id="tabbar">
       <button class="tab-btn" data-screen="home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg><span>ホーム</span></button>
-      <button class="tab-btn" data-screen="calendar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg><span>カレンダー</span></button>
       <button class="tab-btn" data-screen="input"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg><span>入力</span></button>
       <button class="tab-btn" data-screen="summary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V10M12 20V4M20 20v-7"/></svg><span>集計</span></button>
       <button class="tab-btn" data-screen="shopping"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2l1.5 6M18 2l-1.5 6M3.5 8h17l-1.6 10.3a2 2 0 01-2 1.7H7.1a2 2 0 01-2-1.7L3.5 8z"/></svg><span>買い物</span></button>
-      <button class="tab-btn" data-screen="list"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg><span>一覧</span></button>
       <button class="tab-btn" data-screen="edit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg><span>編集</span></button>
     </div>
   </div>
@@ -259,10 +258,12 @@ const state = {
   calMonth: new Date(),
   calFilter: { category: 'all' },
   sumRange: null,
+  sumRangeManual: false,
   rangePicking: null,
   authMode: 'login',
   advanceFilter: { person: 'all', status: 'all' },
-  listFilter: { start:'', end:'', expense:true, income:true, advance:true }
+  listFilter: { start:'', end:'', expense:true, income:true, advance:true },
+  listFilterManual: false
 };
 const todayStr = () => new Date().toISOString().slice(0,10);
 const yen = n => (n<0?'-':'') + Math.abs(Math.round(n)).toLocaleString('ja-JP') + '円';
@@ -401,13 +402,11 @@ function render(){
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.screen===state.screen));
   const area = document.getElementById('screenArea');
   if(state.screen==='home') area.innerHTML = renderHome();
-  if(state.screen==='calendar') area.innerHTML = renderCalendar();
   if(state.screen==='input') area.innerHTML = renderInput();
-  if(state.screen==='summary') area.innerHTML = renderSummary();
+  if(state.screen==='summary') area.innerHTML = renderCalendar() + renderSummary() + renderList();
   if(state.screen==='edit') area.innerHTML = renderEdit();
   if(state.screen==='advances') area.innerHTML = renderAdvances();
   if(state.screen==='shopping') area.innerHTML = renderShopping();
-  if(state.screen==='list') area.innerHTML = renderList();
   attachScreenEvents();
 }
 
@@ -441,6 +440,9 @@ function renderHome(){
   }).sort((a,b)=>a.days-b.days);
 
   const budgetRows = computeBudgetRows();
+  const remainingBudgetTotal = budgetRows.reduce((s,r)=> s + Math.max(0, r.amount - r.spent), 0);
+  const projectedExpense = monthExpense + remainingBudgetTotal;
+  const projectedBalance = allBalance - remainingBudgetTotal;
   const unsettledAdv = state.advances.filter(a=>!a.settled);
   const advTotal = unsettledAdv.reduce((s,a)=>s+a.amount,0);
 
@@ -466,11 +468,19 @@ function renderHome(){
     <div class="card-label" style="margin-bottom:-2px;">${period.startDate.getMonth()+1}/${period.startDate.getDate()} 〜 ${period.endDate.getMonth()+1}/${period.endDate.getDate()-1}</div>
     <div class="row2">
       <div class="card"><div class="card-label">今月の収入</div><div class="card-value" style="color:var(--success)">+${yen(monthIncome)}</div></div>
-      <div class="card"><div class="card-label">今月の支出</div><div class="card-value" style="color:var(--danger)">-${yen(monthExpense)}</div></div>
+      <div class="card">
+        <div class="card-label">今月の支出</div>
+        <div class="card-value" style="color:var(--danger)">-${yen(monthExpense)}</div>
+        <div style="font-size:11px;color:var(--text-sub);margin-top:2px;">予算消化時見込み:${yen(projectedExpense)}</div>
+      </div>
     </div>
     <div class="row2">
       <div class="card"><div class="card-label">今月の収支</div><div class="card-value" style="color:${monthBalance>=0?'var(--success)':'var(--danger)'}">${monthBalance>=0?'+':''}${yen(monthBalance)}</div></div>
-      <div class="card"><div class="card-label">使える残り</div><div class="card-value">${yen(allBalance)}</div></div>
+      <div class="card">
+        <div class="card-label">使える残り</div>
+        <div class="card-value">${yen(allBalance)}</div>
+        <div style="font-size:11px;color:var(--text-sub);margin-top:2px;">予算消化時見込み:${yen(projectedBalance)}</div>
+      </div>
     </div>
     ${budgetRows.length ? `
     <div class="card">
@@ -481,13 +491,6 @@ function renderHome(){
           <div class="budget-track"><div class="budget-fill" style="width:${Math.min(100,r.pct)}%;background:${r.color}"></div></div>
         </div>`).join('')}
     </div>` : ''}
-    <div class="card" id="advSummaryCard" style="cursor:pointer;">
-      <div class="card-label">立て替え(未精算)</div>
-      <div style="display:flex;justify-content:space-between;align-items:baseline;">
-        <span class="card-value" style="color:${unsettledAdv.length?'var(--danger)':'var(--text)'}">${yen(advTotal)}</span>
-        <span style="font-size:12px;color:var(--text-sub);">${unsettledAdv.length}件 ›</span>
-      </div>
-    </div>
     <div class="card">
       <div class="card-label">固定費の支払い予定</div>
       ${fixedWithDays.length ? fixedWithDays.map(f=>`
@@ -495,6 +498,13 @@ function renderHome(){
           <div class="top"><span>${escapeHtml(f.name)}</span><span class="days-left ${f.days<=3?'soon':''}">あと${f.days}日</span></div>
           <div class="bottom"><span>${f.nextDate.getMonth()+1}/${f.nextDate.getDate()}・${yen(f.amount)}</span><span class="tag">${escapeHtml(f.method||'未設定')}</span></div>
         </div>`).join('') : '<div class="no-data">固定費が登録されていません(編集画面から登録できます)</div>'}
+    </div>
+    <div class="card" id="advSummaryCard" style="cursor:pointer;">
+      <div class="card-label">立て替え(未精算)</div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;">
+        <span class="card-value" style="color:${unsettledAdv.length?'var(--danger)':'var(--text)'}">${yen(advTotal)}</span>
+        <span style="font-size:12px;color:var(--text-sub);">${unsettledAdv.length}件 ›</span>
+      </div>
     </div>
   `;
 }
@@ -587,10 +597,10 @@ function renderInput(){
 
 /* ---------- 集計 ---------- */
 function renderSummary(){
-  if(!state.sumRange){
-    const end = todayStr();
-    const startD = new Date(); startD.setDate(startD.getDate()-6);
-    state.sumRange = { start: startD.toISOString().slice(0,10), end };
+  if(!state.sumRangeManual){
+    const period = getCurrentPeriod();
+    const endInclusive = new Date(period.endDate); endInclusive.setDate(endInclusive.getDate()-1);
+    state.sumRange = { start: period.start, end: endInclusive.toISOString().slice(0,10) };
   }
   const {start,end} = state.sumRange;
   const inRange = t => t.date>=start && t.date<=end;
@@ -791,6 +801,11 @@ function renderShopping(){
 /* ---------- 一覧 ---------- */
 function renderList(){
   const f = state.listFilter;
+  if(!state.listFilterManual){
+    const period = getCurrentPeriod();
+    const endInclusive = new Date(period.endDate); endInclusive.setDate(endInclusive.getDate()-1);
+    f.start = period.start; f.end = endInclusive.toISOString().slice(0,10);
+  }
   let records = [];
   state.transactions.forEach(t=>{
     if(t.type==='expense' && !f.expense) return;
@@ -846,12 +861,36 @@ function attachScreenEvents(){
     const advCard = document.getElementById('advSummaryCard');
     if(advCard) advCard.onclick = ()=>{ state.screen='advances'; render(); };
   }
-  if(state.screen==='calendar'){
+  if(state.screen==='summary'){
     document.getElementById('calPrev').onclick = ()=>{ state.calMonth.setMonth(state.calMonth.getMonth()-1); render(); };
     document.getElementById('calNext').onclick = ()=>{ state.calMonth.setMonth(state.calMonth.getMonth()+1); render(); };
     document.getElementById('calCatFilter').onchange = e=>{ state.calFilter.category = e.target.value; render(); };
     document.querySelectorAll('.cal-cell[data-day]').forEach(cell=>{
       cell.addEventListener('click', ()=>openDayModal(parseInt(cell.dataset.day)));
+    });
+    document.getElementById('rangeBtn').onclick = ()=>{
+      const w = document.getElementById('rangeCalWrap');
+      w.style.display = w.style.display==='none' ? 'block' : 'none';
+      state.rangePicking = 'start';
+      attachRangeCalEvents();
+    };
+    attachRangeCalEvents();
+    document.getElementById('listStart').onchange = e=>{ state.listFilterManual = true; state.listFilter.start = e.target.value; render(); };
+    document.getElementById('listEnd').onchange = e=>{ state.listFilterManual = true; state.listFilter.end = e.target.value; render(); };
+    document.getElementById('fExpense').onchange = e=>{ state.listFilter.expense = e.target.checked; render(); };
+    document.getElementById('fIncome').onchange = e=>{ state.listFilter.income = e.target.checked; render(); };
+    document.getElementById('fAdvance').onchange = e=>{ state.listFilter.advance = e.target.checked; render(); };
+    document.querySelectorAll('.list-edit').forEach(b=>{
+      b.onclick = ()=>{
+        if(b.dataset.kind==='advance') openAdvanceForm(state.advances.find(a=>a.id===b.dataset.id));
+        else openTransactionForm(state.transactions.find(t=>t.id===b.dataset.id));
+      };
+    });
+    document.querySelectorAll('.list-del').forEach(b=>{
+      b.onclick = ()=>{
+        const col = b.dataset.kind==='advance' ? 'advances' : 'transactions';
+        deleteDoc(doc(db,'users',state.uid,col,b.dataset.id));
+      };
     });
   }
   if(state.screen==='input'){
@@ -866,15 +905,6 @@ function attachScreenEvents(){
     }
     document.getElementById('inSave').onclick = ()=>saveTransaction(false);
     document.getElementById('inSaveContinue').onclick = ()=>saveTransaction(true);
-  }
-  if(state.screen==='summary'){
-    document.getElementById('rangeBtn').onclick = ()=>{
-      const w = document.getElementById('rangeCalWrap');
-      w.style.display = w.style.display==='none' ? 'block' : 'none';
-      state.rangePicking = 'start';
-      attachRangeCalEvents();
-    };
-    attachRangeCalEvents();
   }
   if(state.screen==='edit'){
     document.getElementById('addGoal').onclick = ()=>openGoalForm(null);
@@ -942,25 +972,6 @@ function attachScreenEvents(){
     });
     attachShoppingDrag();
   }
-  if(state.screen==='list'){
-    document.getElementById('listStart').onchange = e=>{ state.listFilter.start = e.target.value; render(); };
-    document.getElementById('listEnd').onchange = e=>{ state.listFilter.end = e.target.value; render(); };
-    document.getElementById('fExpense').onchange = e=>{ state.listFilter.expense = e.target.checked; render(); };
-    document.getElementById('fIncome').onchange = e=>{ state.listFilter.income = e.target.checked; render(); };
-    document.getElementById('fAdvance').onchange = e=>{ state.listFilter.advance = e.target.checked; render(); };
-    document.querySelectorAll('.list-edit').forEach(b=>{
-      b.onclick = ()=>{
-        if(b.dataset.kind==='advance') openAdvanceForm(state.advances.find(a=>a.id===b.dataset.id));
-        else openTransactionForm(state.transactions.find(t=>t.id===b.dataset.id));
-      };
-    });
-    document.querySelectorAll('.list-del').forEach(b=>{
-      b.onclick = ()=>{
-        const col = b.dataset.kind==='advance' ? 'advances' : 'transactions';
-        deleteDoc(doc(db,'users',state.uid,col,b.dataset.id));
-      };
-    });
-  }
 }
 
 function attachRangeCalEvents(){
@@ -970,6 +981,7 @@ function attachRangeCalEvents(){
   document.querySelectorAll('.rangeday').forEach(cell=>{
     cell.onclick = ()=>{
       const date = cell.dataset.date;
+      state.sumRangeManual = true;
       if(state.rangePicking==='start' || !state.rangePicking){
         state.sumRange = { start: date, end: date };
         state.rangePicking = 'end';
@@ -1272,9 +1284,14 @@ function openBudgetForm(existing){
   box.innerHTML = `
     <div class="mh"><span>${existing?'予算を編集':'予算を追加'}</span><button id="mClose">✕</button></div>
     <div class="form-field"><label>カテゴリ</label>
-      <select id="bCat" ${existing?'disabled':''}>${options.length?options.map(c=>`<option value="${c.id}" ${existing&&existing.categoryId===c.id?'selected':''}>${escapeHtml(c.name)}</option>`).join(''):'<option value="">設定できるカテゴリがありません</option>'}</select>
+      <select id="bCat" ${existing?'disabled':''}>${options.map(c=>`<option value="${c.id}" ${existing&&existing.categoryId===c.id?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}${existing?'':'<option value="__new__">+ 新しいカテゴリを作成</option>'}</select>
+    </div>
+    <div class="form-field" id="bNewCatWrap" style="display:none;">
+      <label>新しいカテゴリ名</label><input type="text" id="bNewCatName">
+      <div class="color-swatches" style="margin-top:8px;">${PALETTE.map((p,i)=>`<span class="cs bNewColor ${i===0?'sel':''}" data-color="${p}" style="background:${p}"></span>`).join('')}</div>
     </div>
     <div class="form-field"><label>予算金額(円)</label><input type="text" id="bAmt" class="amt-input" value="${existing?existing.amount.toLocaleString('ja-JP'):''}" inputmode="numeric"></div>
+    <div id="bErr" style="color:var(--danger);font-size:12px;min-height:16px;"></div>
     <div class="form-actions">
       <button class="cancel" id="fCancel">キャンセル</button>
       ${existing?'<button class="delete" id="fDelete">削除</button>':''}
@@ -1284,13 +1301,32 @@ function openBudgetForm(existing){
   document.getElementById('modalOverlay').classList.add('show');
   document.getElementById('mClose').onclick = closeModal;
   document.getElementById('fCancel').onclick = closeModal;
+  let newColor = PALETTE[0];
+  if(!existing){
+    const catSel = document.getElementById('bCat');
+    const newWrap = document.getElementById('bNewCatWrap');
+    newWrap.style.display = catSel.value==='__new__' ? 'block' : 'none';
+    catSel.onchange = e=>{ newWrap.style.display = e.target.value==='__new__' ? 'block' : 'none'; };
+    document.querySelectorAll('.bNewColor').forEach(sw=>{
+      sw.onclick = ()=>{ newColor = sw.dataset.color; document.querySelectorAll('.bNewColor').forEach(s=>s.classList.remove('sel')); sw.classList.add('sel'); };
+    });
+  }
   if(existing) document.getElementById('fDelete').onclick = async ()=>{
     await deleteDoc(doc(db,'users',state.uid,'budgets',existing.id)); closeModal();
   };
   document.getElementById('fSave').onclick = async ()=>{
-    const categoryId = document.getElementById('bCat').value;
+    const errEl = document.getElementById('bErr');
+    let categoryId = document.getElementById('bCat').value;
     const amount = parseAmt(document.getElementById('bAmt').value);
-    if(!categoryId || amount<=0) return;
+    if(amount<=0){ errEl.textContent = '予算金額を正しく入力してください'; return; }
+    if(categoryId==='__new__'){
+      const name = document.getElementById('bNewCatName').value.trim();
+      if(!name){ errEl.textContent = '新しいカテゴリ名を入力してください'; return; }
+      const order = state.categories.filter(c=>c.type==='expense').length;
+      const ref = await addDoc(collection(db,'users',state.uid,'categories'), { name, type:'expense', color:newColor, order });
+      categoryId = ref.id;
+    }
+    if(!categoryId){ errEl.textContent = 'カテゴリを選択してください'; return; }
     if(existing) await updateDoc(doc(db,'users',state.uid,'budgets',existing.id), { amount });
     else await addDoc(collection(db,'users',state.uid,'budgets'), { categoryId, amount });
     closeModal();
