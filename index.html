@@ -68,10 +68,10 @@
   .progress-fill{ height:100%; background:var(--success); border-radius:4px; }
   .fixed-item{ display:flex; align-items:center; gap:10px; padding:9px 0; border-bottom:1px solid var(--border); }
   .fixed-item:last-child{ border-bottom:none; }
-  .fixed-day{ flex:0 0 auto; width:46px; height:46px; border-radius:10px; background:var(--accent-bg); color:var(--primary); display:flex; flex-direction:column; align-items:center; justify-content:center; line-height:1.1; }
-  .fixed-day .num{ font-size:16px; font-weight:700; }
-  .fixed-day .unit{ font-size:9px; }
-  .fixed-info{ flex:1; min-width:0; }
+  .fixed-day{ flex:0 0 auto; min-width:46px; height:32px; padding:0 8px; border-radius:8px; background:var(--accent-bg); color:var(--primary); display:flex; align-items:center; justify-content:center; white-space:nowrap; }
+  .fixed-day .num{ font-size:15px; font-weight:700; }
+  .fixed-day .unit{ font-size:11px; margin-left:1px; }
+  .fixed-info{ flex:1; min-width:0; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
   .fixed-info .name{ font-size:14px; }
   .fixed-item .bottom{ display:flex; justify-content:space-between; align-items:center; margin-top:4px; }
   .fixed-item .bottom span:first-child{ font-size:12px; color:var(--text-sub); }
@@ -125,6 +125,14 @@
   .bar-chart{ display:flex; align-items:flex-end; gap:4px; height:100px; border-top:1px solid var(--border); padding-top:6px; }
   .bar-chart .bar{ flex:1; background:var(--danger-strong); border-radius:3px 3px 0 0; min-height:2px; position:relative; }
   .bar-chart .bar.income{ background:var(--success); }
+  .trend-toggle{ display:flex; gap:6px; margin-bottom:10px; }
+  .trend-gran-btn{ padding:5px 14px; font-size:12px; border:1px solid var(--border); border-radius:20px; background:var(--surface); color:var(--text-sub); cursor:pointer; }
+  .trend-gran-btn.active{ background:var(--primary); color:#fff; border-color:var(--primary); }
+  .trend-chart-wrap{ display:flex; gap:8px; }
+  .trend-yaxis{ flex:0 0 auto; display:flex; flex-direction:column; justify-content:space-between; height:100px; padding-top:6px; font-size:10px; color:var(--text-sub); text-align:right; white-space:nowrap; }
+  .trend-chart-inner{ flex:1; min-width:0; }
+  .trend-xaxis{ display:flex; gap:4px; margin-top:4px; }
+  .trend-xaxis span{ flex:1; font-size:9px; color:var(--text-sub); text-align:center; white-space:nowrap; overflow:hidden; }
   .no-data{ color:var(--text-sub); font-size:13px; text-align:center; padding:30px 0; }
 
   /* ---- Edit screen ---- */
@@ -264,6 +272,7 @@ const state = {
   calFilter: { category: 'all' },
   sumRange: null,
   sumRangeManual: false,
+  trendGranularity: 'day',
   rangePicking: null,
   authMode: 'login',
   advanceFilter: { person: 'all', status: 'all' },
@@ -456,8 +465,8 @@ function renderHome(){
     <h2 class="screen-title">ホーム</h2>
     <div class="card">
       <div class="card-label">貯蓄残高</div>
-      <div class="card-value">${yen(Math.max(0,allBalance))}</div>
-      <div style="font-size:11px;color:var(--text-sub);margin-top:4px;">うち未配分:${yen(unallocated)}</div>
+      <div class="card-value" style="text-align:right;">${yen(Math.max(0,allBalance))}</div>
+      <div style="font-size:11px;color:var(--text-sub);margin-top:4px;text-align:right;">うち未配分:${yen(unallocated)}</div>
     </div>
     ${state.goals.length ? `
     <div class="card">
@@ -473,17 +482,17 @@ function renderHome(){
     </div>` : ''}
     <div class="card-label" style="margin-bottom:-2px;">${period.startDate.getMonth()+1}/${period.startDate.getDate()} 〜 ${period.endDate.getMonth()+1}/${period.endDate.getDate()-1}</div>
     <div class="row2">
-      <div class="card"><div class="card-label">今月の収入</div><div class="card-value" style="color:var(--success)">+${yen(monthIncome)}</div></div>
+      <div class="card"><div class="card-label">今月の収入</div><div class="card-value" style="color:var(--success);text-align:right;">+${yen(monthIncome)}</div></div>
       <div class="card">
         <div class="card-label">今月の支出</div>
-        <div class="card-value" style="color:var(--danger)">-${yen(monthExpense)}</div>
+        <div class="card-value" style="color:var(--danger);text-align:right;">-${yen(monthExpense)}</div>
       </div>
     </div>
     <div class="row2">
-      <div class="card"><div class="card-label">今月の収支</div><div class="card-value" style="color:${monthBalance>=0?'var(--success)':'var(--danger)'}">${monthBalance>=0?'+':''}${yen(monthBalance)}</div></div>
+      <div class="card"><div class="card-label">今月の収支</div><div class="card-value" style="color:${monthBalance>=0?'var(--success)':'var(--danger)'};text-align:right;">${monthBalance>=0?'+':''}${yen(monthBalance)}</div></div>
       <div class="card">
         <div class="card-label">使えるお金</div>
-        <div class="card-value" style="color:${usableNow>=0?'var(--text)':'var(--danger)'}">${yen(usableNow)}</div>
+        <div class="card-value" style="color:${usableNow>=0?'var(--text)':'var(--danger)'};text-align:right;">${yen(usableNow)}</div>
       </div>
     </div>
     <div style="font-size:11px;color:var(--text-sub);margin-top:-8px;margin-bottom:14px;">※使えるお金:貯蓄残高から、今期の予算の残りと、まだ払っていない固定費を引いた金額</div>
@@ -510,9 +519,10 @@ function renderHome(){
     </div>
     <div class="card" id="advSummaryCard" style="cursor:pointer;">
       <div class="card-label">立て替え(未精算)</div>
-      <div style="display:flex;justify-content:space-between;align-items:baseline;">
+      <div style="display:flex;justify-content:flex-end;align-items:baseline;gap:8px;">
+        <span style="font-size:12px;color:var(--text-sub);">${unsettledAdv.length}件</span>
         <span class="card-value" style="color:${unsettledAdv.length?'var(--danger)':'var(--text)'}">${yen(advTotal)}</span>
-        <span style="font-size:12px;color:var(--text-sub);">${unsettledAdv.length}件 ›</span>
+        <span style="color:var(--text-sub);">›</span>
       </div>
     </div>
   `;
@@ -632,17 +642,45 @@ function renderSummary(){
   });
   gradient = gradient.slice(0,-2) || 'var(--surface-2) 0% 100%';
 
-  // 日別の収支推移(期間内)
+  // 収支推移(期間内・日/週/月で集計)
   const days = [];
   const [sy,sm,sd] = start.split('-').map(Number), [ey,em,ed] = end.split('-').map(Number);
   let d0 = new Date(sy,sm-1,sd), d1 = new Date(ey,em-1,ed);
   for(let d=new Date(d0); d<=d1; d.setDate(d.getDate()+1)) days.push(toLocalStr(d));
-  const dayVals = days.map(day=>{
+  const netByDay = {};
+  days.forEach(day=>{
     const exp = state.transactions.filter(t=>t.type==='expense'&&t.date===day).reduce((s,t)=>s+t.amount,0);
     const inc = state.transactions.filter(t=>t.type==='income'&&t.date===day).reduce((s,t)=>s+t.amount,0);
-    return inc - exp;
+    netByDay[day] = inc - exp;
   });
+  const gran = state.trendGranularity || 'day';
+  let buckets = [];
+  if(gran==='day'){
+    buckets = days.map(day=>{
+      const [,mo,da] = day.split('-');
+      return { label: `${parseInt(mo)}/${parseInt(da)}`, value: netByDay[day] };
+    });
+  } else if(gran==='week'){
+    for(let i=0;i<days.length;i+=7){
+      const chunk = days.slice(i,i+7);
+      const [,mo,da] = chunk[0].split('-');
+      const value = chunk.reduce((s,day)=>s+netByDay[day],0);
+      buckets.push({ label: `${parseInt(mo)}/${parseInt(da)}〜`, value });
+    }
+  } else { // month
+    const byMonth = {};
+    days.forEach(day=>{
+      const key = day.slice(0,7);
+      byMonth[key] = (byMonth[key]||0) + netByDay[day];
+    });
+    buckets = Object.entries(byMonth).map(([key,value])=>{
+      const [,mo] = key.split('-');
+      return { label: `${parseInt(mo)}月`, value };
+    });
+  }
+  const dayVals = buckets.map(b=>b.value);
   const maxVal = Math.max(1, ...dayVals.map(v=>Math.abs(v)));
+  const labelEvery = gran==='day' ? Math.max(1, Math.ceil(buckets.length/6)) : 1;
 
   return `
     <h2 class="screen-title">集計</h2>
@@ -659,8 +697,19 @@ function renderSummary(){
       <div class="pie-legend">${catEntries.map(c=>`<span><span class="dot" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${c.color};margin-right:4px;"></span>${escapeHtml(c.name)} ${yen(c.amt)}</span>`).join('')}</div>
     ` : ''}
     <div class="card-label">期間内の収支推移</div>
-    <div style="font-size:11px;color:var(--text-sub);margin-bottom:6px;">1日ごとの「収入−支出」を棒グラフにしたものです。緑の棒はその日が収入超過(お金が増えた日)、赤の棒は支出超過(お金が減った日)で、棒が長いほど金額が大きいことを表します。</div>
-    ${dayVals.some(v=>v!==0) ? `<div class="bar-chart">${dayVals.map(v=>`<div class="bar ${v>=0?'income':''}" style="height:${Math.max(3,Math.abs(v)/maxVal*100)}%"></div>`).join('')}</div>` : '<div class="no-data">この期間の記録がありません</div>'}
+    <div style="font-size:11px;color:var(--text-sub);margin-bottom:6px;">「収入−支出」を棒グラフにしたものです。緑の棒はその期間が収入超過(お金が増えた)、赤の棒は支出超過(お金が減った)で、棒が長いほど金額が大きいことを表します。</div>
+    <div class="trend-toggle">
+      ${[['day','日'],['week','週'],['month','月']].map(([g,label])=>`<button class="trend-gran-btn ${gran===g?'active':''}" data-gran="${g}">${label}</button>`).join('')}
+    </div>
+    ${dayVals.some(v=>v!==0) ? `
+      <div class="trend-chart-wrap">
+        <div class="trend-yaxis"><span>${yen(maxVal)}</span><span>¥0</span></div>
+        <div class="trend-chart-inner">
+          <div class="bar-chart">${dayVals.map(v=>`<div class="bar ${v>=0?'income':''}" style="height:${Math.max(3,Math.abs(v)/maxVal*100)}%"></div>`).join('')}</div>
+          <div class="trend-xaxis">${buckets.map((b,i)=>`<span>${i%labelEvery===0?escapeHtml(b.label):''}</span>`).join('')}</div>
+        </div>
+      </div>
+    ` : '<div class="no-data">この期間の記録がありません</div>'}
   `;
 }
 function renderRangeCalendar(){
@@ -845,14 +894,12 @@ function renderList(){
       <label><input type="checkbox" id="fAdvance" ${f.advance?'checked':''} style="width:auto;margin-right:4px;">立替</label>
     </div>
     ${records.length ? records.map(r=>`
-      <div class="list-record-row" data-id="${r.id}" data-kind="${r.kind}" style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);">
-        <div style="flex:1;">
-          <div style="font-size:13px;">${escapeHtml(r.label)}${r.memo?'・'+escapeHtml(r.memo):''}</div>
-          <div style="font-size:11px;color:var(--text-sub);">${r.date}${r.kind==='advance'?(r.settled?'・精算済み':'・未精算'):''}</div>
-        </div>
-        <div style="font-weight:600;font-size:13px;color:${r.type==='income'?'var(--success)':(r.type==='expense'?'var(--danger)':'var(--text)')};margin-right:10px;">${r.type==='income'?'+':'-'}${yen(r.amount)}</div>
+      <div class="list-record-row" data-id="${r.id}" data-kind="${r.kind}" style="display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="flex:0 0 62px;font-size:11px;color:var(--text-sub);">${r.date.slice(5).replace('-','/')}</div>
+        <div style="flex:1;min-width:0;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(r.label)}${r.memo?'・'+escapeHtml(r.memo):''}${r.kind==='advance'?(r.settled?'・精算済み':'・未精算'):''}</div>
+        <div style="flex:0 0 auto;font-weight:600;font-size:13px;text-align:right;color:${r.type==='income'?'var(--success)':(r.type==='expense'?'var(--danger)':'var(--text)')};">${r.type==='income'?'+':'-'}${yen(r.amount)}</div>
         <span class="icon-btn list-edit" data-id="${r.id}" data-kind="${r.kind}">✎</span>
-        <span class="icon-btn list-del" data-id="${r.id}" data-kind="${r.kind}" style="margin-left:4px;">✕</span>
+        <span class="icon-btn list-del" data-id="${r.id}" data-kind="${r.kind}">✕</span>
       </div>`).join('') : '<div class="no-data">該当する記録がありません</div>'}
   `;
 }
@@ -886,6 +933,9 @@ function attachScreenEvents(){
       attachRangeCalEvents();
     };
     attachRangeCalEvents();
+    document.querySelectorAll('.trend-gran-btn').forEach(b=>{
+      b.onclick = ()=>{ state.trendGranularity = b.dataset.gran; render(); };
+    });
     document.getElementById('listStart').onchange = e=>{ state.listFilterManual = true; state.listFilter.start = e.target.value; render(); };
     document.getElementById('listEnd').onchange = e=>{ state.listFilterManual = true; state.listFilter.end = e.target.value; render(); };
     document.getElementById('fExpense').onchange = e=>{ state.listFilter.expense = e.target.checked; render(); };
