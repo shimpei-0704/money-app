@@ -441,16 +441,8 @@ function renderHome(){
 
   const budgetRows = computeBudgetRows();
   const remainingBudgetTotal = budgetRows.reduce((s,r)=> s + Math.max(0, r.amount - r.spent), 0);
-  const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const remainingFixedTotal = state.fixedCosts.reduce((sum,f)=>{
-    const occ = f.day >= period.startDate.getDate()
-      ? new Date(period.startDate.getFullYear(), period.startDate.getMonth(), f.day)
-      : new Date(period.startDate.getFullYear(), period.startDate.getMonth()+1, f.day);
-    return occ >= todayMidnight ? sum + f.amount : sum;
-  }, 0);
-  const remainingTotal = remainingBudgetTotal + remainingFixedTotal;
-  const projectedExpense = monthExpense + remainingTotal;
-  const projectedBalance = allBalance - remainingTotal;
+  const projectedExpense = monthExpense + remainingBudgetTotal;
+  const projectedBalance = allBalance - remainingBudgetTotal;
   const unsettledAdv = state.advances.filter(a=>!a.settled);
   const advTotal = unsettledAdv.reduce((s,a)=>s+a.amount,0);
 
@@ -479,7 +471,7 @@ function renderHome(){
       <div class="card">
         <div class="card-label">今月の支出</div>
         <div class="card-value" style="color:var(--danger)">-${yen(monthExpense)}</div>
-        <div style="font-size:11px;color:var(--text-sub);margin-top:2px;">予算・固定費消化時見込み:${yen(projectedExpense)}</div>
+        <div style="font-size:11px;color:var(--text-sub);margin-top:2px;">予算消化時見込み:${yen(projectedExpense)}</div>
       </div>
     </div>
     <div class="row2">
@@ -487,7 +479,7 @@ function renderHome(){
       <div class="card">
         <div class="card-label">使える残り</div>
         <div class="card-value">${yen(allBalance)}</div>
-        <div style="font-size:11px;color:var(--text-sub);margin-top:2px;">予算・固定費消化時見込み:${yen(projectedBalance)}</div>
+        <div style="font-size:11px;color:var(--text-sub);margin-top:2px;">予算消化時見込み:${yen(projectedBalance)}</div>
       </div>
     </div>
     ${budgetRows.length ? `
