@@ -441,8 +441,14 @@ function renderHome(){
 
   const budgetRows = computeBudgetRows();
   const remainingBudgetTotal = budgetRows.reduce((s,r)=> s + Math.max(0, r.amount - r.spent), 0);
-  const projectedExpense = monthExpense + remainingBudgetTotal;
-  const projectedBalance = allBalance - remainingBudgetTotal;
+  const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const remainingFixedTotal = state.fixedCosts.reduce((sum,f)=>{
+    const occ = f.day >= period.startDate.getDate()
+      ? new Date(period.startDate.getFullYear(), period.startDate.getMonth(), f.day)
+      : new Date(period.startDate.getFullYear(), period.startDate.getMonth()+1, f.day);
+    return occ >= todayMidnight ? sum + f.amount : sum;
+  }, 0);
+  const usableNow = allBalance - remainingBudgetTotal - remainingFixedTotal;
   const unsettledAdv = state.advances.filter(a=>!a.settled);
   const advTotal = unsettledAdv.reduce((s,a)=>s+a.amount,0);
 
@@ -471,7 +477,6 @@ function renderHome(){
       <div class="card">
         <div class="card-label">今月の支出</div>
         <div class="card-value" style="color:var(--danger)">-${yen(monthExpense)}</div>
-        <div style="font-size:11px;color:var(--text-sub);margin-top:2px;">予算消化時見込み:${yen(projectedExpense)}</div>
       </div>
     </div>
     <div class="row2">
@@ -479,8 +484,12 @@ function renderHome(){
       <div class="card">
         <div class="card-label">使える残り</div>
         <div class="card-value">${yen(allBalance)}</div>
-        <div style="font-size:11px;color:var(--text-sub);margin-top:2px;">予算消化時見込み:${yen(projectedBalance)}</div>
       </div>
+    </div>
+    <div class="card">
+      <div class="card-label">今使えるお金</div>
+      <div class="card-value" style="color:${usableNow>=0?'var(--text)':'var(--danger)'}">${yen(usableNow)}</div>
+      <div style="font-size:11px;color:var(--text-sub);margin-top:4px;">貯蓄残高から、今期の予算の残りと、まだ払っていない固定費を引いた金額</div>
     </div>
     ${budgetRows.length ? `
     <div class="card">
@@ -495,7 +504,7 @@ function renderHome(){
       <div class="card-label">固定費の支払い予定</div>
       ${fixedWithDays.length ? fixedWithDays.map(f=>`
         <div class="fixed-item">
-          <div class="top"><span>${escapeHtml(f.name)}</span><span class="days-left ${f.days<=3?'soon':''}">あと${f.days}日</span></div>
+          <div class="top"><span>${escapeHtml(f.name)}</span></div>
           <div class="bottom"><span>${f.nextDate.getMonth()+1}/${f.nextDate.getDate()}・${yen(f.amount)}</span><span class="tag">${escapeHtml(f.method||'未設定')}</span></div>
         </div>`).join('') : '<div class="no-data">固定費が登録されていません(編集画面から登録できます)</div>'}
     </div>
