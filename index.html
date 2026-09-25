@@ -66,11 +66,16 @@
   .row2{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
   .progress-track{ height:8px; background:var(--surface-2); border-radius:4px; overflow:hidden; margin-top:8px; }
   .progress-fill{ height:100%; background:var(--success); border-radius:4px; }
-  .fixed-item{ padding:9px 0; border-bottom:1px solid var(--border); }
+  .fixed-item{ display:flex; align-items:center; gap:10px; padding:9px 0; border-bottom:1px solid var(--border); }
   .fixed-item:last-child{ border-bottom:none; }
-  .fixed-item .top{ display:flex; justify-content:space-between; font-size:14px; }
+  .fixed-day{ flex:0 0 auto; width:46px; height:46px; border-radius:10px; background:var(--accent-bg); color:var(--primary); display:flex; flex-direction:column; align-items:center; justify-content:center; line-height:1.1; }
+  .fixed-day .num{ font-size:16px; font-weight:700; }
+  .fixed-day .unit{ font-size:9px; }
+  .fixed-info{ flex:1; min-width:0; }
+  .fixed-info .name{ font-size:14px; }
   .fixed-item .bottom{ display:flex; justify-content:space-between; align-items:center; margin-top:4px; }
   .fixed-item .bottom span:first-child{ font-size:12px; color:var(--text-sub); }
+  .fixed-amount{ flex:0 0 auto; font-size:14px; font-weight:600; text-align:right; }
   .tag{ font-size:10px; background:var(--accent-bg); color:var(--primary); padding:3px 9px; border-radius:20px; }
   .days-left{ font-weight:600; font-size:13px; }
   .days-left.soon{ color:var(--danger); }
@@ -479,9 +484,9 @@ function renderHome(){
       <div class="card">
         <div class="card-label">使えるお金</div>
         <div class="card-value" style="color:${usableNow>=0?'var(--text)':'var(--danger)'}">${yen(usableNow)}</div>
-        <div style="font-size:11px;color:var(--text-sub);margin-top:4px;">貯蓄残高から、今期の予算の残りと、まだ払っていない固定費を引いた金額</div>
       </div>
     </div>
+    <div style="font-size:11px;color:var(--text-sub);margin-top:-8px;margin-bottom:14px;">※使えるお金:貯蓄残高から、今期の予算の残りと、まだ払っていない固定費を引いた金額</div>
     ${budgetRows.length ? `
     <div class="card">
       <div class="card-label">予算の状況</div>
@@ -495,8 +500,12 @@ function renderHome(){
       <div class="card-label">固定費の支払い予定</div>
       ${fixedSorted.length ? fixedSorted.map(f=>`
         <div class="fixed-item">
-          <div class="top"><span>${escapeHtml(f.name)}</span></div>
-          <div class="bottom"><span>毎月${f.day}日・${yen(f.amount)}</span><span class="tag">${escapeHtml(f.method||'未設定')}</span></div>
+          <div class="fixed-day"><span class="num">${f.day}</span><span class="unit">日</span></div>
+          <div class="fixed-info">
+            <div class="name">${escapeHtml(f.name)}</div>
+            <span class="tag">${escapeHtml(f.method||'未設定')}</span>
+          </div>
+          <div class="fixed-amount">${yen(f.amount)}</div>
         </div>`).join('') : '<div class="no-data">固定費が登録されていません(編集画面から登録できます)</div>'}
     </div>
     <div class="card" id="advSummaryCard" style="cursor:pointer;">
@@ -513,7 +522,7 @@ function renderHome(){
 function renderCalendar(){
   const y = state.calMonth.getFullYear(), m = state.calMonth.getMonth();
   const first = new Date(y,m,1);
-  const startDow = first.getDay();
+  const startDow = (first.getDay()+6)%7;
   const daysInMonth = new Date(y,m+1,0).getDate();
 
   const catOptions = ['<option value="all">すべてのカテゴリ</option>']
@@ -554,7 +563,7 @@ function renderCalendar(){
       <button id="calNext">›</button>
     </div>
     <div class="cal-grid">
-      ${['日','月','火','水','木','金','土'].map(d=>`<div class="cal-dow">${d}</div>`).join('')}
+      ${['月','火','水','木','金','土','日'].map(d=>`<div class="cal-dow">${d}</div>`).join('')}
       ${cells}
     </div>
     <div class="legend">
@@ -650,13 +659,14 @@ function renderSummary(){
       <div class="pie-legend">${catEntries.map(c=>`<span><span class="dot" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${c.color};margin-right:4px;"></span>${escapeHtml(c.name)} ${yen(c.amt)}</span>`).join('')}</div>
     ` : ''}
     <div class="card-label">期間内の収支推移</div>
+    <div style="font-size:11px;color:var(--text-sub);margin-bottom:6px;">1日ごとの「収入−支出」を棒グラフにしたものです。緑の棒はその日が収入超過(お金が増えた日)、赤の棒は支出超過(お金が減った日)で、棒が長いほど金額が大きいことを表します。</div>
     ${dayVals.some(v=>v!==0) ? `<div class="bar-chart">${dayVals.map(v=>`<div class="bar ${v>=0?'income':''}" style="height:${Math.max(3,Math.abs(v)/maxVal*100)}%"></div>`).join('')}</div>` : '<div class="no-data">この期間の記録がありません</div>'}
   `;
 }
 function renderRangeCalendar(){
   const y = state.calMonth.getFullYear(), m = state.calMonth.getMonth();
   const first = new Date(y,m,1);
-  const startDow = first.getDay();
+  const startDow = (first.getDay()+6)%7;
   const daysInMonth = new Date(y,m+1,0).getDate();
   const {start,end} = state.sumRange;
   let cells = '';
@@ -670,7 +680,7 @@ function renderRangeCalendar(){
     <div class="cal-header">
       <button id="rcPrev">‹</button><span class="ym">${y}年${m+1}月(開始日→終了日の順にタップ)</span><button id="rcNext">›</button>
     </div>
-    <div class="cal-grid">${['日','月','火','水','木','金','土'].map(d=>`<div class="cal-dow">${d}</div>`).join('')}${cells}</div>
+    <div class="cal-grid">${['月','火','水','木','金','土','日'].map(d=>`<div class="cal-dow">${d}</div>`).join('')}${cells}</div>
   `;
 }
 
