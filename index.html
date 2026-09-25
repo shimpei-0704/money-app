@@ -432,12 +432,7 @@ function renderHome(){
   const unallocated = allBalance - allocatedTotal;
 
   const today = new Date();
-  const fixedWithDays = state.fixedCosts.map(f=>{
-    let next = new Date(today.getFullYear(), today.getMonth(), f.day);
-    if(next < new Date(today.getFullYear(),today.getMonth(),today.getDate())) next.setMonth(next.getMonth()+1);
-    const days = Math.round((next-today)/86400000);
-    return {...f, days, nextDate: next};
-  }).sort((a,b)=>a.days-b.days);
+  const fixedSorted = state.fixedCosts.slice().sort((a,b)=>a.day-b.day);
 
   const budgetRows = computeBudgetRows();
   const remainingBudgetTotal = budgetRows.reduce((s,r)=> s + Math.max(0, r.amount - r.spent), 0);
@@ -482,14 +477,10 @@ function renderHome(){
     <div class="row2">
       <div class="card"><div class="card-label">今月の収支</div><div class="card-value" style="color:${monthBalance>=0?'var(--success)':'var(--danger)'}">${monthBalance>=0?'+':''}${yen(monthBalance)}</div></div>
       <div class="card">
-        <div class="card-label">使える残り</div>
-        <div class="card-value">${yen(allBalance)}</div>
+        <div class="card-label">使えるお金</div>
+        <div class="card-value" style="color:${usableNow>=0?'var(--text)':'var(--danger)'}">${yen(usableNow)}</div>
+        <div style="font-size:11px;color:var(--text-sub);margin-top:4px;">貯蓄残高から、今期の予算の残りと、まだ払っていない固定費を引いた金額</div>
       </div>
-    </div>
-    <div class="card">
-      <div class="card-label">今使えるお金</div>
-      <div class="card-value" style="color:${usableNow>=0?'var(--text)':'var(--danger)'}">${yen(usableNow)}</div>
-      <div style="font-size:11px;color:var(--text-sub);margin-top:4px;">貯蓄残高から、今期の予算の残りと、まだ払っていない固定費を引いた金額</div>
     </div>
     ${budgetRows.length ? `
     <div class="card">
@@ -502,10 +493,10 @@ function renderHome(){
     </div>` : ''}
     <div class="card">
       <div class="card-label">固定費の支払い予定</div>
-      ${fixedWithDays.length ? fixedWithDays.map(f=>`
+      ${fixedSorted.length ? fixedSorted.map(f=>`
         <div class="fixed-item">
           <div class="top"><span>${escapeHtml(f.name)}</span></div>
-          <div class="bottom"><span>${f.nextDate.getMonth()+1}/${f.nextDate.getDate()}・${yen(f.amount)}</span><span class="tag">${escapeHtml(f.method||'未設定')}</span></div>
+          <div class="bottom"><span>毎月${f.day}日・${yen(f.amount)}</span><span class="tag">${escapeHtml(f.method||'未設定')}</span></div>
         </div>`).join('') : '<div class="no-data">固定費が登録されていません(編集画面から登録できます)</div>'}
     </div>
     <div class="card" id="advSummaryCard" style="cursor:pointer;">
@@ -709,7 +700,7 @@ function renderEdit(){
     <div class="section-label">固定費登録</div>
     ${state.fixedCosts.map(f=>`
       <div class="list-row fixed-edit-row" data-id="${f.id}" style="cursor:pointer;">
-        <span>${escapeHtml(f.name)}・${yen(f.amount)}・${escapeHtml(f.method||'未設定')}</span><span class="icon-btn">✎</span>
+        <span>${escapeHtml(f.name)}・毎月${f.day}日・${yen(f.amount)}・${escapeHtml(f.method||'未設定')}</span><span class="icon-btn">✎</span>
       </div>`).join('')}
     <button class="add-btn" id="addFixed">+ 固定費を追加</button>
 
