@@ -448,7 +448,9 @@ function renderHome(){
   const unallocated = allBalance - allocatedTotal;
 
   const today = new Date();
-  const fixedSorted = state.fixedCosts.slice().sort((a,b)=>a.day-b.day);
+  const startDay = Math.min(28, Math.max(1, state.monthStartDay||1));
+  const distFromStart = day => (day - startDay + 31) % 31;
+  const fixedSorted = state.fixedCosts.slice().sort((a,b)=>distFromStart(a.day)-distFromStart(b.day));
 
   const budgetRows = computeBudgetRows();
   const remainingBudgetTotal = budgetRows.reduce((s,r)=> s + Math.max(0, r.amount - r.spent), 0);
