@@ -71,6 +71,7 @@
   .fixed-day{ flex:0 0 auto; width:46px; height:46px; border-radius:10px; background:var(--accent-bg); color:var(--primary); display:flex; flex-direction:column; align-items:center; justify-content:center; line-height:1.1; }
   .fixed-day .num{ font-size:16px; font-weight:700; }
   .fixed-day .unit{ font-size:9px; }
+  .fixed-day.due-today{ background:var(--danger-strong); color:#fff; }
   .fixed-info{ flex:1; min-width:0; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
   .fixed-info .name{ font-size:14px; }
   .fixed-amount{ flex:0 0 auto; font-size:14px; font-weight:600; text-align:right; }
@@ -516,7 +517,7 @@ function renderHome(){
       </div>
       ${fixedSorted.length ? fixedSorted.map(f=>`
         <div class="fixed-item">
-          <div class="fixed-day"><span class="num">${f.day}</span><span class="unit">日</span></div>
+          <div class="fixed-day ${f.day===today.getDate()?'due-today':''}"><span class="num">${f.day}</span><span class="unit">日</span></div>
           <div class="fixed-info">
             <div class="name">${escapeHtml(f.name)}</div>
             <span class="tag">${escapeHtml(f.method||'未設定')}</span>
