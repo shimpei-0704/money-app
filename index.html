@@ -66,16 +66,11 @@
   .row2{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
   .progress-track{ height:8px; background:var(--surface-2); border-radius:4px; overflow:hidden; margin-top:8px; }
   .progress-fill{ height:100%; background:var(--success); border-radius:4px; }
-  .fixed-item{ display:flex; align-items:center; gap:10px; padding:9px 0; border-bottom:1px solid var(--border); }
+  .fixed-item{ padding:9px 0; border-bottom:1px solid var(--border); }
   .fixed-item:last-child{ border-bottom:none; }
-  .fixed-day{ flex:0 0 auto; min-width:46px; height:32px; padding:0 8px; border-radius:8px; background:var(--accent-bg); color:var(--primary); display:flex; align-items:center; justify-content:center; white-space:nowrap; }
-  .fixed-day .num{ font-size:15px; font-weight:700; }
-  .fixed-day .unit{ font-size:11px; margin-left:1px; }
-  .fixed-info{ flex:1; min-width:0; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-  .fixed-info .name{ font-size:14px; }
+  .fixed-item .top{ display:flex; justify-content:space-between; font-size:14px; }
   .fixed-item .bottom{ display:flex; justify-content:space-between; align-items:center; margin-top:4px; }
   .fixed-item .bottom span:first-child{ font-size:12px; color:var(--text-sub); }
-  .fixed-amount{ flex:0 0 auto; font-size:14px; font-weight:600; text-align:right; }
   .tag{ font-size:10px; background:var(--accent-bg); color:var(--primary); padding:3px 9px; border-radius:20px; }
   .days-left{ font-weight:600; font-size:13px; }
   .days-left.soon{ color:var(--danger); }
@@ -273,6 +268,8 @@ const state = {
   sumRange: null,
   sumRangeManual: false,
   trendGranularity: 'day',
+  trendRange: null,
+  trendRangeManual: false,
   rangePicking: null,
   authMode: 'login',
   advanceFilter: { person: 'all', status: 'all' },
@@ -509,12 +506,8 @@ function renderHome(){
       <div class="card-label">固定費の支払い予定</div>
       ${fixedSorted.length ? fixedSorted.map(f=>`
         <div class="fixed-item">
-          <div class="fixed-day"><span class="num">${f.day}</span><span class="unit">日</span></div>
-          <div class="fixed-info">
-            <div class="name">${escapeHtml(f.name)}</div>
-            <span class="tag">${escapeHtml(f.method||'未設定')}</span>
-          </div>
-          <div class="fixed-amount">${yen(f.amount)}</div>
+          <div class="top"><span>${escapeHtml(f.name)}</span></div>
+          <div class="bottom"><span>毎月${f.day}日・${yen(f.amount)}</span><span class="tag">${escapeHtml(f.method||'未設定')}</span></div>
         </div>`).join('') : '<div class="no-data">固定費が登録されていません(編集画面から登録できます)</div>'}
     </div>
     <div class="card" id="advSummaryCard" style="cursor:pointer;">
@@ -642,45 +635,61 @@ function renderSummary(){
   });
   gradient = gradient.slice(0,-2) || 'var(--surface-2) 0% 100%';
 
-  // 収支推移(期間内・日/週/月で集計)
-  const days = [];
-  const [sy,sm,sd] = start.split('-').map(Number), [ey,em,ed] = end.split('-').map(Number);
-  let d0 = new Date(sy,sm-1,sd), d1 = new Date(ey,em-1,ed);
-  for(let d=new Date(d0); d<=d1; d.setDate(d.getDate()+1)) days.push(toLocalStr(d));
+  // 収支推移(日/週/月それぞれ既定の期間で集計。期間は手動設定も可能)
+  const gran = state.trendGranularity || 'day';
+  const todayD = new Date(); todayD.setHours(0,0,0,0);
+  let autoTrendStart, autoTrendEnd;
+  {
+    const e = new Date(todayD);
+    let s;
+    if(gran==='day'){ s = new Date(e); s.setDate(s.getDate()-6); }
+    else if(gran==='week'){ s = new Date(e); s.setMonth(s.getMonth()-1); s.setDate(s.getDate()+1); }
+    else { s = new Date(e.getFullYear(), e.getMonth()-11, 1); }
+    autoTrendStart = toLocalStr(s); autoTrendEnd = toLocalStr(e);
+  }
+  let trendStart, trendEnd;
+  if(state.trendRangeManual && state.trendRange){
+    trendStart = state.trendRange.start; trendEnd = state.trendRange.end;
+  } else {
+    trendStart = autoTrendStart; trendEnd = autoTrendEnd;
+  }
+  const trendDays = [];
+  const [tsy,tsm,tsd] = trendStart.split('-').map(Number), [tey,tem,ted] = trendEnd.split('-').map(Number);
+  let td0 = new Date(tsy,tsm-1,tsd), td1 = new Date(tey,tem-1,ted);
+  for(let d=new Date(td0); d<=td1; d.setDate(d.getDate()+1)) trendDays.push(toLocalStr(d));
   const netByDay = {};
-  days.forEach(day=>{
+  trendDays.forEach(day=>{
     const exp = state.transactions.filter(t=>t.type==='expense'&&t.date===day).reduce((s,t)=>s+t.amount,0);
     const inc = state.transactions.filter(t=>t.type==='income'&&t.date===day).reduce((s,t)=>s+t.amount,0);
     netByDay[day] = inc - exp;
   });
-  const gran = state.trendGranularity || 'day';
   let buckets = [];
   if(gran==='day'){
-    buckets = days.map(day=>{
+    buckets = trendDays.map(day=>{
       const [,mo,da] = day.split('-');
       return { label: `${parseInt(mo)}/${parseInt(da)}`, value: netByDay[day] };
     });
   } else if(gran==='week'){
-    for(let i=0;i<days.length;i+=7){
-      const chunk = days.slice(i,i+7);
+    for(let i=0;i<trendDays.length;i+=7){
+      const chunk = trendDays.slice(i,i+7);
       const [,mo,da] = chunk[0].split('-');
       const value = chunk.reduce((s,day)=>s+netByDay[day],0);
       buckets.push({ label: `${parseInt(mo)}/${parseInt(da)}〜`, value });
     }
   } else { // month
     const byMonth = {};
-    days.forEach(day=>{
+    trendDays.forEach(day=>{
       const key = day.slice(0,7);
       byMonth[key] = (byMonth[key]||0) + netByDay[day];
     });
     buckets = Object.entries(byMonth).map(([key,value])=>{
-      const [,mo] = key.split('-');
-      return { label: `${parseInt(mo)}月`, value };
+      const [yr,mo] = key.split('-');
+      return { label: `${yr.slice(2)}/${parseInt(mo)}月`, value };
     });
   }
   const dayVals = buckets.map(b=>b.value);
   const maxVal = Math.max(1, ...dayVals.map(v=>Math.abs(v)));
-  const labelEvery = gran==='day' ? Math.max(1, Math.ceil(buckets.length/6)) : 1;
+  const labelEvery = 1;
 
   return `
     <h2 class="screen-title">集計</h2>
@@ -700,6 +709,10 @@ function renderSummary(){
     <div style="font-size:11px;color:var(--text-sub);margin-bottom:6px;">「収入−支出」を棒グラフにしたものです。緑の棒はその期間が収入超過(お金が増えた)、赤の棒は支出超過(お金が減った)で、棒が長いほど金額が大きいことを表します。</div>
     <div class="trend-toggle">
       ${[['day','日'],['week','週'],['month','月']].map(([g,label])=>`<button class="trend-gran-btn ${gran===g?'active':''}" data-gran="${g}">${label}</button>`).join('')}
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <span style="font-size:11px;color:var(--text-sub);">${trendStart} 〜 ${trendEnd}${state.trendRangeManual?'(手動設定)':''}</span>
+      <button class="link-btn" id="trendRangeBtn" data-auto-start="${autoTrendStart}" data-auto-end="${autoTrendEnd}" style="font-size:11px;">期間を設定</button>
     </div>
     ${dayVals.some(v=>v!==0) ? `
       <div class="trend-chart-wrap">
@@ -936,6 +949,10 @@ function attachScreenEvents(){
     document.querySelectorAll('.trend-gran-btn').forEach(b=>{
       b.onclick = ()=>{ state.trendGranularity = b.dataset.gran; render(); };
     });
+    document.getElementById('trendRangeBtn').onclick = (e)=>{
+      const btn = e.currentTarget;
+      openTrendRangeForm(btn.dataset.autoStart, btn.dataset.autoEnd);
+    };
     document.getElementById('listStart').onchange = e=>{ state.listFilterManual = true; state.listFilter.start = e.target.value; render(); };
     document.getElementById('listEnd').onchange = e=>{ state.listFilterManual = true; state.listFilter.end = e.target.value; render(); };
     document.getElementById('fExpense').onchange = e=>{ state.listFilter.expense = e.target.checked; render(); };
@@ -1227,6 +1244,38 @@ function openPeriodForm(){
     const v = parseInt(document.getElementById('periodInput').value)||1;
     await setDoc(doc(db,'users',state.uid,'meta','settings'), { monthStartDay: v }, {merge:true});
     closeModal();
+  };
+}
+
+function openTrendRangeForm(defaultStart, defaultEnd){
+  const box = document.getElementById('modalBox');
+  const cur = (state.trendRangeManual && state.trendRange) ? state.trendRange : { start: defaultStart, end: defaultEnd };
+  box.innerHTML = `
+    <div class="mh"><span>収支推移の期間を設定</span><button id="mClose">✕</button></div>
+    <div class="form-field"><label>開始日</label><input type="date" id="trStart" value="${cur.start}"></div>
+    <div class="form-field"><label>終了日</label><input type="date" id="trEnd" value="${cur.end}"></div>
+    <div style="font-size:11px;color:var(--text-sub);margin-bottom:4px;">「自動に戻す」を押すと、日/週/月の選択に応じた期間(直近1週間・直近1か月・直近1年)に戻ります</div>
+    <div class="form-actions">
+      <button class="cancel" id="fCancel">キャンセル</button>
+      <button class="delete" id="trReset">自動に戻す</button>
+      <button class="save" id="fSave">設定する</button>
+    </div>
+  `;
+  document.getElementById('modalOverlay').classList.add('show');
+  document.getElementById('mClose').onclick = closeModal;
+  document.getElementById('fCancel').onclick = closeModal;
+  document.getElementById('trReset').onclick = ()=>{
+    state.trendRangeManual = false;
+    state.trendRange = null;
+    closeModal(); render();
+  };
+  document.getElementById('fSave').onclick = ()=>{
+    const s = document.getElementById('trStart').value;
+    const e = document.getElementById('trEnd').value;
+    if(!s || !e || s>e) return;
+    state.trendRangeManual = true;
+    state.trendRange = { start:s, end:e };
+    closeModal(); render();
   };
 }
 
