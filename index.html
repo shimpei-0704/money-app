@@ -499,7 +499,10 @@ function renderHome(){
     <div style="font-size:11px;color:var(--text-sub);margin-top:-8px;margin-bottom:14px;">※使えるお金:貯蓄残高から、今期の予算の残りと、まだ払っていない固定費を引いた金額</div>
     ${budgetRows.length ? `
     <div class="card">
-      <div class="card-label">予算の状況</div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;">
+        <div class="card-label" style="margin-bottom:0;">予算の状況</div>
+        <div style="font-size:12px;color:var(--text-sub);">合計 ${yen(budgetRows.reduce((s,r)=>s+r.amount,0))}</div>
+      </div>
       ${budgetRows.map(r=>`
         <div class="budget-row">
           <div class="bh"><span>${escapeHtml(r.name)}</span><span>${yen(r.spent)} / ${yen(r.amount)}</span></div>
@@ -507,7 +510,10 @@ function renderHome(){
         </div>`).join('')}
     </div>` : ''}
     <div class="card">
-      <div class="card-label">固定費の支払い予定</div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;">
+        <div class="card-label" style="margin-bottom:0;">固定費の支払い予定</div>
+        <div style="font-size:12px;color:var(--text-sub);">合計 ${yen(fixedSorted.reduce((s,f)=>s+f.amount,0))}</div>
+      </div>
       ${fixedSorted.length ? fixedSorted.map(f=>`
         <div class="fixed-item">
           <div class="fixed-day"><span class="num">${f.day}</span><span class="unit">日</span></div>
