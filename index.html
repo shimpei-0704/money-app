@@ -76,8 +76,7 @@
   .fixed-info{ flex:1; min-width:0; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
   .fixed-info .name{ font-size:14px; }
   .fixed-amount{ flex:0 0 auto; font-size:14px; font-weight:600; text-align:right; }
-  .fixed-log-btn{ font-size:12px; padding:5px 12px; border-radius:20px; border:1px solid var(--primary); background:transparent; color:var(--primary); cursor:pointer; }
-  .fixed-log-btn.logged{ border-color:var(--border); color:var(--text-sub); background:var(--surface-2); }
+  .fixed-check{ flex:0 0 auto; width:20px; height:20px; }
   .tag{ font-size:10px; background:var(--accent-bg); color:var(--primary); padding:3px 9px; border-radius:20px; }
   .days-left{ font-weight:600; font-size:13px; }
   .days-left.soon{ color:var(--danger); }
@@ -525,15 +524,13 @@ function renderHome(){
         return `
         <div class="fixed-item">
           <div class="fixed-item-row">
+            <input type="checkbox" class="fixed-check" data-id="${f.id}" ${logged?'checked':''}>
             <div class="fixed-day ${f.day===today.getDate()?'due-today':''}"><span class="num">${f.day}</span><span class="unit">日</span></div>
             <div class="fixed-info">
               <div class="name">${escapeHtml(f.name)}</div>
               <span class="tag">${escapeHtml(f.method||'未設定')}</span>
             </div>
             <div class="fixed-amount">${yen(f.amount)}</div>
-          </div>
-          <div style="display:flex;justify-content:flex-end;margin-top:6px;">
-            <button class="fixed-log-btn ${logged?'logged':''}" data-id="${f.id}">${logged?'記録済み✓':'記録する'}</button>
           </div>
         </div>`;
       }).join('') : '<div class="no-data">固定費が登録されていません(編集画面から登録できます)</div>'}
@@ -958,18 +955,31 @@ function catRow(c){
 
 function escapeHtml(s){ return String(s??'').replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
+async function getFixedCostCategoryId(){
+  const existing = state.categories.find(c=>c.type==='expense' && c.name==='固定費');
+  if(existing) return existing.id;
+  const order = state.categories.filter(c=>c.type==='expense').length;
+  const ref = await addDoc(collection(db,'users',state.uid,'categories'), { name:'固定費', type:'expense', color:'#8A8FA3', order });
+  return ref.id;
+}
+
 /* ====== イベント付与 ====== */
 function attachScreenEvents(){
   if(state.screen==='home'){
     const advCard = document.getElementById('advSummaryCard');
     if(advCard) advCard.onclick = ()=>{ state.screen='advances'; render(); };
-    document.querySelectorAll('.fixed-log-btn').forEach(b=>{
-      b.onclick = async ()=>{
-        const f = state.fixedCosts.find(x=>x.id===b.dataset.id);
+    document.querySelectorAll('.fixed-check').forEach(cb=>{
+      cb.onchange = async ()=>{
+        const f = state.fixedCosts.find(x=>x.id===cb.dataset.id);
         if(!f) return;
-        const cat = f.category || (state.categories.find(c=>c.type==='expense')||{}).id;
-        if(!cat){ alert('先に支出カテゴリを1つ作成してください(編集画面)'); return; }
-        await addDoc(collection(db,'users',state.uid,'transactions'), { type:'expense', category:cat, amount:f.amount, date:todayStr(), memo:f.name, createdAt:Date.now() });
+        const period = getCurrentPeriod();
+        if(cb.checked){
+          const cat = await getFixedCostCategoryId();
+          await addDoc(collection(db,'users',state.uid,'transactions'), { type:'expense', category:cat, amount:f.amount, date:todayStr(), memo:f.name, createdAt:Date.now() });
+        } else {
+          const t = state.transactions.find(t=>t.type==='expense' && t.memo===f.name && t.date>=period.start && t.date<period.end);
+          if(t) await deleteDoc(doc(db,'users',state.uid,'transactions',t.id));
+        }
       };
     });
   }
@@ -1328,8 +1338,6 @@ function openFixedForm(existing){
     <div class="form-field"><label>名称</label><input type="text" id="fName" value="${existing?escapeHtml(existing.name):''}"></div>
     <div class="form-field"><label>金額(円)</label><input type="text" id="fAmt" class="amt-input" value="${existing?existing.amount.toLocaleString('ja-JP'):''}" inputmode="numeric"></div>
     <div class="form-field"><label>支払日(毎月何日)</label><select id="fDay">${Array.from({length:31},(_,i)=>i+1).map(d=>`<option value="${d}" ${existing&&existing.day===d?'selected':''}>${d}日</option>`).join('')}</select></div>
-    <div class="form-field"><label>カテゴリ</label><select id="fCategory">${state.categories.filter(c=>c.type==='expense').map(c=>`<option value="${c.id}" ${existing&&existing.category===c.id?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}</select></div>
-    <div style="font-size:11px;color:var(--text-sub);margin-bottom:4px;">ホーム画面の「記録する」ボタンで支出登録する際に、このカテゴリが使われます</div>
     <div class="form-field"><label>支払い方法</label><input type="text" id="fMethod" placeholder="例:引き落とし、カード払い" value="${existing?escapeHtml(existing.method||''):''}"></div>
     <div class="form-actions">
       <button class="cancel" id="fCancel">キャンセル</button>
@@ -1348,7 +1356,6 @@ function openFixedForm(existing){
       name: document.getElementById('fName').value.trim(),
       amount: parseAmt(document.getElementById('fAmt').value),
       day: parseInt(document.getElementById('fDay').value)||1,
-      category: document.getElementById('fCategory').value || null,
       method: document.getElementById('fMethod').value.trim(),
     };
     if(!data.name){ return; }
