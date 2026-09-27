@@ -66,8 +66,9 @@
   .row2{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
   .progress-track{ height:8px; background:var(--surface-2); border-radius:4px; overflow:hidden; margin-top:8px; }
   .progress-fill{ height:100%; background:var(--success); border-radius:4px; }
-  .fixed-item{ display:flex; align-items:center; gap:10px; padding:9px 0; border-bottom:1px solid var(--border); }
+  .fixed-item{ padding:9px 0; border-bottom:1px solid var(--border); }
   .fixed-item:last-child{ border-bottom:none; }
+  .fixed-item-row{ display:flex; align-items:center; gap:10px; }
   .fixed-day{ flex:0 0 auto; width:46px; height:46px; border-radius:10px; background:var(--accent-bg); color:var(--primary); display:flex; flex-direction:column; align-items:center; justify-content:center; line-height:1.1; }
   .fixed-day .num{ font-size:16px; font-weight:700; }
   .fixed-day .unit{ font-size:9px; }
@@ -75,6 +76,8 @@
   .fixed-info{ flex:1; min-width:0; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
   .fixed-info .name{ font-size:14px; }
   .fixed-amount{ flex:0 0 auto; font-size:14px; font-weight:600; text-align:right; }
+  .fixed-log-btn{ font-size:12px; padding:5px 12px; border-radius:20px; border:1px solid var(--primary); background:transparent; color:var(--primary); cursor:pointer; }
+  .fixed-log-btn.logged{ border-color:var(--border); color:var(--text-sub); background:var(--surface-2); }
   .tag{ font-size:10px; background:var(--accent-bg); color:var(--primary); padding:3px 9px; border-radius:20px; }
   .days-left{ font-weight:600; font-size:13px; }
   .days-left.soon{ color:var(--danger); }
@@ -517,15 +520,23 @@ function renderHome(){
         <div class="card-label" style="margin-bottom:0;">固定費の支払い予定</div>
         <div style="font-size:12px;color:var(--text-sub);">合計 ${yen(fixedSorted.reduce((s,f)=>s+f.amount,0))}</div>
       </div>
-      ${fixedSorted.length ? fixedSorted.map(f=>`
+      ${fixedSorted.length ? fixedSorted.map(f=>{
+        const logged = state.transactions.some(t=>t.type==='expense' && t.memo===f.name && t.date>=period.start && t.date<period.end);
+        return `
         <div class="fixed-item">
-          <div class="fixed-day ${f.day===today.getDate()?'due-today':''}"><span class="num">${f.day}</span><span class="unit">日</span></div>
-          <div class="fixed-info">
-            <div class="name">${escapeHtml(f.name)}</div>
-            <span class="tag">${escapeHtml(f.method||'未設定')}</span>
+          <div class="fixed-item-row">
+            <div class="fixed-day ${f.day===today.getDate()?'due-today':''}"><span class="num">${f.day}</span><span class="unit">日</span></div>
+            <div class="fixed-info">
+              <div class="name">${escapeHtml(f.name)}</div>
+              <span class="tag">${escapeHtml(f.method||'未設定')}</span>
+            </div>
+            <div class="fixed-amount">${yen(f.amount)}</div>
           </div>
-          <div class="fixed-amount">${yen(f.amount)}</div>
-        </div>`).join('') : '<div class="no-data">固定費が登録されていません(編集画面から登録できます)</div>'}
+          <div style="display:flex;justify-content:flex-end;margin-top:6px;">
+            <button class="fixed-log-btn ${logged?'logged':''}" data-id="${f.id}">${logged?'記録済み✓':'記録する'}</button>
+          </div>
+        </div>`;
+      }).join('') : '<div class="no-data">固定費が登録されていません(編集画面から登録できます)</div>'}
     </div>
     <div class="card" id="advSummaryCard" style="cursor:pointer;">
       <div class="card-label">立て替え(未精算)</div>
@@ -952,6 +963,15 @@ function attachScreenEvents(){
   if(state.screen==='home'){
     const advCard = document.getElementById('advSummaryCard');
     if(advCard) advCard.onclick = ()=>{ state.screen='advances'; render(); };
+    document.querySelectorAll('.fixed-log-btn').forEach(b=>{
+      b.onclick = async ()=>{
+        const f = state.fixedCosts.find(x=>x.id===b.dataset.id);
+        if(!f) return;
+        const cat = f.category || (state.categories.find(c=>c.type==='expense')||{}).id;
+        if(!cat){ alert('先に支出カテゴリを1つ作成してください(編集画面)'); return; }
+        await addDoc(collection(db,'users',state.uid,'transactions'), { type:'expense', category:cat, amount:f.amount, date:todayStr(), memo:f.name, createdAt:Date.now() });
+      };
+    });
   }
   if(state.screen==='summary'){
     document.getElementById('calPrev').onclick = ()=>{ state.calMonth.setMonth(state.calMonth.getMonth()-1); render(); };
@@ -1308,6 +1328,8 @@ function openFixedForm(existing){
     <div class="form-field"><label>名称</label><input type="text" id="fName" value="${existing?escapeHtml(existing.name):''}"></div>
     <div class="form-field"><label>金額(円)</label><input type="text" id="fAmt" class="amt-input" value="${existing?existing.amount.toLocaleString('ja-JP'):''}" inputmode="numeric"></div>
     <div class="form-field"><label>支払日(毎月何日)</label><select id="fDay">${Array.from({length:31},(_,i)=>i+1).map(d=>`<option value="${d}" ${existing&&existing.day===d?'selected':''}>${d}日</option>`).join('')}</select></div>
+    <div class="form-field"><label>カテゴリ</label><select id="fCategory">${state.categories.filter(c=>c.type==='expense').map(c=>`<option value="${c.id}" ${existing&&existing.category===c.id?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}</select></div>
+    <div style="font-size:11px;color:var(--text-sub);margin-bottom:4px;">ホーム画面の「記録する」ボタンで支出登録する際に、このカテゴリが使われます</div>
     <div class="form-field"><label>支払い方法</label><input type="text" id="fMethod" placeholder="例:引き落とし、カード払い" value="${existing?escapeHtml(existing.method||''):''}"></div>
     <div class="form-actions">
       <button class="cancel" id="fCancel">キャンセル</button>
@@ -1326,6 +1348,7 @@ function openFixedForm(existing){
       name: document.getElementById('fName').value.trim(),
       amount: parseAmt(document.getElementById('fAmt').value),
       day: parseInt(document.getElementById('fDay').value)||1,
+      category: document.getElementById('fCategory').value || null,
       method: document.getElementById('fMethod').value.trim(),
     };
     if(!data.name){ return; }
