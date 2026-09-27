@@ -1442,11 +1442,11 @@ function openBudgetForm(existing){
   const box = document.getElementById('modalBox');
   const expCats = state.categories.filter(c=>c.type==='expense');
   const usedIds = state.budgets.filter(b=>!existing||b.id!==existing.id).map(b=>b.categoryId);
-  const options = expCats.filter(c=> existing ? c.id===existing.categoryId : !usedIds.includes(c.id));
+  const options = expCats.filter(c=> !usedIds.includes(c.id));
   box.innerHTML = `
     <div class="mh"><span>${existing?'予算を編集':'予算を追加'}</span><button id="mClose">✕</button></div>
     <div class="form-field"><label>カテゴリ</label>
-      <select id="bCat" ${existing?'disabled':''}>${options.map(c=>`<option value="${c.id}" ${existing&&existing.categoryId===c.id?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}${existing?'':'<option value="__new__">+ 新しいカテゴリを作成</option>'}</select>
+      <select id="bCat">${options.map(c=>`<option value="${c.id}" ${existing&&existing.categoryId===c.id?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}<option value="__new__">+ 新しいカテゴリを作成</option></select>
     </div>
     <div class="form-field" id="bNewCatWrap" style="display:none;">
       <label>新しいカテゴリ名</label><input type="text" id="bNewCatName">
@@ -1464,7 +1464,7 @@ function openBudgetForm(existing){
   document.getElementById('mClose').onclick = closeModal;
   document.getElementById('fCancel').onclick = closeModal;
   let newColor = PALETTE[0];
-  if(!existing){
+  {
     const catSel = document.getElementById('bCat');
     const newWrap = document.getElementById('bNewCatWrap');
     newWrap.style.display = catSel.value==='__new__' ? 'block' : 'none';
@@ -1489,7 +1489,7 @@ function openBudgetForm(existing){
       categoryId = ref.id;
     }
     if(!categoryId){ errEl.textContent = 'カテゴリを選択してください'; return; }
-    if(existing) await updateDoc(doc(db,'users',state.uid,'budgets',existing.id), { amount });
+    if(existing) await updateDoc(doc(db,'users',state.uid,'budgets',existing.id), { categoryId, amount });
     else await addDoc(collection(db,'users',state.uid,'budgets'), { categoryId, amount });
     closeModal();
   };
