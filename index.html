@@ -33,9 +33,12 @@
   #app{ max-width:480px; margin:0 auto; min-height:100%; display:flex; flex-direction:column; }
 
   /* ---- Auth ---- */
-  #authScreen{ display:flex; flex-direction:column; justify-content:center; min-height:100vh; padding:32px 24px; }
+  #authScreen{ display:none; flex-direction:column; justify-content:center; min-height:100vh; padding:32px 24px; }
   #authScreen h1{ font-size:24px; font-weight:700; margin:0 0 4px; letter-spacing:.02em; }
   #authScreen p.sub{ color:var(--text-sub); margin:0 0 28px; font-size:14px; }
+  #loadingScreen{ display:flex; align-items:center; justify-content:center; min-height:100vh; }
+  #loadingScreen .spin{ width:28px; height:28px; border:3px solid var(--border); border-top-color:var(--primary); border-radius:50%; animation:spin .7s linear infinite; }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
   .field{ margin-bottom:14px; }
   .field label{ display:block; font-size:12px; color:var(--text-sub); margin-bottom:5px; }
   .field input{ width:100%; padding:12px 14px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); color:var(--text); }
@@ -202,6 +205,9 @@
 
 <div id="app">
 
+  <!-- ===== Loading (auto-login確認中) ===== -->
+  <div id="loadingScreen"><div class="spin"></div></div>
+
   <!-- ===== Auth screen ===== -->
   <div id="authScreen">
     <h1>家計簿</h1>
@@ -306,6 +312,7 @@ const PALETTE = ['#FF5D5D','#FF9F40','#FFD23F','#2FE0A6','#3DC6F0','#5D7DFF','#C
 /* ====== Auth ====== */
 const authScreen = document.getElementById('authScreen');
 const shell = document.getElementById('shell');
+const loadingScreen = document.getElementById('loadingScreen');
 document.getElementById('authSubmit').addEventListener('click', submitAuth);
 document.getElementById('authToggle').addEventListener('click', () => {
   state.authMode = state.authMode === 'login' ? 'signup' : 'login';
@@ -344,6 +351,7 @@ function translateAuthError(code){
 let unsubs = [];
 onAuthStateChanged(auth, async (user) => {
   unsubs.forEach(u=>u()); unsubs = [];
+  loadingScreen.style.display = 'none';
   if(user){
     state.uid = user.uid;
     authScreen.style.display = 'none';
