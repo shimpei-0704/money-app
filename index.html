@@ -967,6 +967,7 @@ function renderList(){
         <div style="flex:0 0 62px;font-size:11px;color:var(--text-sub);">${r.date.slice(5).replace('-','/')}</div>
         <div style="flex:1;min-width:0;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(r.label)}${r.memo?'・'+escapeHtml(r.memo):''}${r.kind==='advance'?(r.settled?'・精算済み':'・未精算'):''}</div>
         <div style="flex:0 0 auto;font-weight:600;font-size:13px;text-align:right;color:${r.type==='income'?'var(--success)':(r.type==='expense'?'var(--danger)':'var(--text)')};">${r.type==='income'?'+':'-'}${yen(r.amount)}</div>
+        ${r.kind==='transaction' ? `<span class="icon-btn list-copy" data-id="${r.id}">⧉</span>` : ''}
         <span class="icon-btn list-edit" data-id="${r.id}" data-kind="${r.kind}">✎</span>
         <span class="icon-btn list-del" data-id="${r.id}" data-kind="${r.kind}">✕</span>
       </div>`).join('') : '<div class="no-data">該当する記録がありません</div>'}
@@ -1043,6 +1044,9 @@ function attachScreenEvents(){
         if(b.dataset.kind==='advance') openAdvanceForm(state.advances.find(a=>a.id===b.dataset.id));
         else openTransactionForm(state.transactions.find(t=>t.id===b.dataset.id));
       };
+    });
+    document.querySelectorAll('.list-copy').forEach(b=>{
+      b.onclick = ()=>{ openTransactionForm(state.transactions.find(t=>t.id===b.dataset.id), true); };
     });
     document.querySelectorAll('.list-del').forEach(b=>{
       b.onclick = ()=>{
@@ -1234,42 +1238,46 @@ async function saveTransaction(keepGoing){
 }
 
 /* ---- フォームモーダル群 ---- */
-function openTransactionForm(existing){
+function openTransactionForm(existing, copyMode){
   if(!existing) return;
   const box = document.getElementById('modalBox');
   const cats = state.categories.filter(c=>c.type===existing.type);
   box.innerHTML = `
-    <div class="mh"><span>${existing.type==='income'?'収入':'支出'}を編集</span><button id="mClose">✕</button></div>
+    <div class="mh"><span>${existing.type==='income'?'収入':'支出'}を${copyMode?'コピーして登録':'編集'}</span><button id="mClose">✕</button></div>
     <div class="form-field"><label>カテゴリ</label>
       <select id="tCat">${cats.map(c=>`<option value="${c.id}" ${existing.category===c.id?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}</select>
     </div>
     <div class="form-field"><label>金額(円)</label><input type="text" id="tAmt" class="amt-input" value="${existing.amount.toLocaleString('ja-JP')}" inputmode="numeric"></div>
-    <div class="form-field"><label>日付</label><input type="date" id="tDate" value="${existing.date}"></div>
+    <div class="form-field"><label>日付</label><input type="date" id="tDate" value="${copyMode?todayStr():existing.date}"></div>
     <div class="form-field"><label>メモ</label><input type="text" id="tMemo" value="${escapeHtml(existing.memo||'')}"></div>
     <div id="tErr" style="color:var(--danger);font-size:12px;min-height:16px;"></div>
     <div class="form-actions">
       <button class="cancel" id="fCancel">キャンセル</button>
-      <button class="delete" id="fDelete">削除</button>
-      <button class="save" id="fSave">保存</button>
+      ${copyMode?'':'<button class="delete" id="fDelete">削除</button>'}
+      <button class="save" id="fSave">${copyMode?'登録':'保存'}</button>
     </div>
   `;
   document.getElementById('modalOverlay').classList.add('show');
   document.getElementById('mClose').onclick = closeModal;
   document.getElementById('fCancel').onclick = closeModal;
-  document.getElementById('fDelete').onclick = async ()=>{
-    await deleteDoc(doc(db,'users',state.uid,'transactions',existing.id)); closeModal();
-  };
+  if(!copyMode){
+    document.getElementById('fDelete').onclick = async ()=>{
+      await deleteDoc(doc(db,'users',state.uid,'transactions',existing.id)); closeModal();
+    };
+  }
   document.getElementById('fSave').onclick = async ()=>{
     const errEl = document.getElementById('tErr');
     const amount = parseAmt(document.getElementById('tAmt').value);
     const date = document.getElementById('tDate').value;
     if(amount<=0){ errEl.textContent = '金額を正しく入力してください'; return; }
     if(!date){ errEl.textContent = '日付を選択してください'; return; }
-    await updateDoc(doc(db,'users',state.uid,'transactions',existing.id), {
-      category: document.getElementById('tCat').value,
-      amount, date,
-      memo: document.getElementById('tMemo').value.trim()
-    });
+    const category = document.getElementById('tCat').value;
+    const memo = document.getElementById('tMemo').value.trim();
+    if(copyMode){
+      await addDoc(collection(db,'users',state.uid,'transactions'), { type: existing.type, category, amount, date, memo, createdAt:Date.now() });
+    } else {
+      await updateDoc(doc(db,'users',state.uid,'transactions',existing.id), { category, amount, date, memo });
+    }
     closeModal();
   };
 }
