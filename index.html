@@ -472,11 +472,11 @@ function renderHome(){
   }, 0);
   const fixedCostsTotal = state.fixedCosts.reduce((s,f)=>s+f.amount,0);
   const budgetTotal = state.budgets.reduce((s,b)=>s+b.amount,0);
-  const budgetCatIds = state.budgets.map(b=>b.categoryId);
   const fixedCat = state.categories.find(c=>c.type==='expense' && c.name==='固定費');
   const fixedCatId = fixedCat ? fixedCat.id : null;
-  const extraExpense = thisMonth.filter(t=> t.type==='expense' && t.category!==fixedCatId && !budgetCatIds.includes(t.category)).reduce((s,t)=>s+t.amount,0);
-  const usableNow = monthIncome - fixedCostsTotal - budgetTotal - reservedSavings - extraExpense;
+  const fixedCatExpense = thisMonth.filter(t=> t.type==='expense' && t.category===fixedCatId).reduce((s,t)=>s+t.amount,0);
+  const nonFixedExpense = monthExpense - fixedCatExpense;
+  const usableNow = monthIncome - fixedCostsTotal - budgetTotal - reservedSavings - nonFixedExpense;
   const unsettledAdv = state.advances.filter(a=>!a.settled);
   const advTotal = unsettledAdv.reduce((s,a)=>s+a.amount,0);
 
@@ -518,7 +518,7 @@ function renderHome(){
         <div class="card-value" style="color:${usableNow>=0?'var(--text)':'var(--danger)'};text-align:right;">${yen(usableNow)}</div>
       </div>
     </div>
-    <div style="font-size:11px;color:var(--text-sub);margin-top:-8px;margin-bottom:14px;">※使えるお金:今期の収入から、固定費・予算・貯蓄目標(それぞれの設定金額)をあらかじめ差し引いた金額。そこから、固定費・予算・貯蓄目標のどれにも当てはまらない支出をした分だけ、さらに減っていきます</div>
+    <div style="font-size:11px;color:var(--text-sub);margin-top:-8px;margin-bottom:14px;">※使えるお金:今期の収入から、固定費・予算・貯蓄目標(それぞれの設定金額)をあらかじめ差し引いた金額。そこから、固定費以外の支出をした分だけ、さらに減っていきます</div>
     ${budgetRows.length ? `
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;">
