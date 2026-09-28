@@ -948,20 +948,20 @@ function renderList(){
       <input type="date" id="listStart" value="${f.start}">
       <input type="date" id="listEnd" value="${f.end}">
     </div>
-    <div style="display:flex;gap:14px;margin-bottom:10px;font-size:13px;">
+    <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:14px;font-size:13px;">
       <label><input type="checkbox" id="fExpense" ${f.expense?'checked':''} style="width:auto;margin-right:4px;">支出</label>
       <label><input type="checkbox" id="fIncome" ${f.income?'checked':''} style="width:auto;margin-right:4px;">収入</label>
       <label><input type="checkbox" id="fAdvance" ${f.advance?'checked':''} style="width:auto;margin-right:4px;">立替</label>
+      <select id="fCategory" style="width:auto;">
+        <option value="">カテゴリ:すべて</option>
+        <optgroup label="支出">
+          ${state.categories.filter(c=>c.type==='expense').map(c=>`<option value="${c.id}" ${f.category===c.id?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}
+        </optgroup>
+        <optgroup label="収入">
+          ${state.categories.filter(c=>c.type==='income').map(c=>`<option value="${c.id}" ${f.category===c.id?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}
+        </optgroup>
+      </select>
     </div>
-    <select id="fCategory" style="margin-bottom:14px;">
-      <option value="">カテゴリ:すべて</option>
-      <optgroup label="支出">
-        ${state.categories.filter(c=>c.type==='expense').map(c=>`<option value="${c.id}" ${f.category===c.id?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}
-      </optgroup>
-      <optgroup label="収入">
-        ${state.categories.filter(c=>c.type==='income').map(c=>`<option value="${c.id}" ${f.category===c.id?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}
-      </optgroup>
-    </select>
     ${records.length ? records.map(r=>`
       <div class="list-record-row" data-id="${r.id}" data-kind="${r.kind}" style="display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--border);">
         <div style="flex:0 0 62px;font-size:11px;color:var(--text-sub);">${r.date.slice(5).replace('-','/')}</div>
