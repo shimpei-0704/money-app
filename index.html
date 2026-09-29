@@ -81,11 +81,11 @@
   .fixed-amount{ flex:0 0 auto; font-size:14px; font-weight:600; text-align:right; }
   .fixed-check{ flex:0 0 auto; width:20px; height:20px; }
   .tag{ font-size:10px; background:var(--accent-bg); color:var(--primary); padding:3px 9px; border-radius:20px; }
-  .account-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:12px; }
-  .account-tile{ background:var(--surface-2); border-radius:var(--radius-sm); padding:10px 12px; }
-  .account-tile .aname{ font-size:11px; color:var(--text-sub); margin-bottom:4px; display:flex; align-items:center; gap:6px; }
-  .account-tile .aname .dot{ width:7px; height:7px; border-radius:50%; background:var(--primary); flex:0 0 auto; }
-  .account-tile .abal{ font-size:15px; font-weight:700; }
+  .account-grid{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-top:12px; }
+  .account-tile{ background:var(--surface-2); border-radius:var(--radius-sm); padding:9px 8px; min-width:0; }
+  .account-tile .aname{ font-size:10px; color:var(--text-sub); margin-bottom:4px; display:flex; align-items:center; gap:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .account-tile .aname .dot{ width:6px; height:6px; border-radius:50%; background:var(--primary); flex:0 0 auto; }
+  .account-tile .abal{ font-size:12.5px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .account-tile .abal.neg{ color:var(--danger); }
   .days-left{ font-weight:600; font-size:13px; }
   .days-left.soon{ color:var(--danger); }
@@ -507,7 +507,6 @@ function renderHome(){
   const accountBalances = state.accounts.map(a=>({ id:a.id, name:a.name, balance: accountBalance(a.id) }));
   const allBalance = accountBalances.reduce((s,a)=>s+a.balance, 0);
   const allocatedTotal = state.goals.reduce((s,g)=>s+goalCumulative(g),0);
-  const unallocated = allBalance - allocatedTotal;
 
   const today = new Date();
   const startDay = Math.min(28, Math.max(1, state.monthStartDay||1));
@@ -527,6 +526,7 @@ function renderHome(){
   const fixedCatExpense = thisMonth.filter(t=> t.type==='expense' && t.category===fixedCatId).reduce((s,t)=>s+t.amount,0);
   const nonFixedExpense = monthExpense - fixedCatExpense;
   const usableNow = monthIncome - fixedCostsTotal - budgetTotal - reservedSavings - nonFixedExpense;
+  const carryover = allBalance - monthIncome + usableNow;
   const unsettledAdv = state.advances.filter(a=>!a.settled);
   const advTotal = unsettledAdv.reduce((s,a)=>s+a.amount,0);
 
@@ -538,7 +538,7 @@ function renderHome(){
         <button class="link-btn" id="openTransferBtn">振替する</button>
       </div>
       <div class="card-value" style="text-align:right;">${yen(Math.max(0,allBalance))}</div>
-      <div style="font-size:11px;color:var(--text-sub);margin-top:4px;text-align:right;">うち未配分:${yen(unallocated)}</div>
+      <div style="font-size:11px;color:var(--text-sub);margin-top:4px;text-align:right;">繰越:${yen(carryover)}</div>
       ${accountBalances.length ? `
       <div class="account-grid">
         ${accountBalances.map((a,i)=>`
