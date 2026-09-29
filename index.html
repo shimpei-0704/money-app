@@ -269,6 +269,8 @@ const state = {
   categories: [],
   fixedCosts: [],
   budgets: [],
+  accounts: [],
+  transfers: [],
   advances: [],
   advanceContacts: [],
   shoppingHeadings: [],
@@ -286,7 +288,7 @@ const state = {
   rangePicking: null,
   authMode: 'login',
   advanceFilter: { person: 'all', status: 'all' },
-  listFilter: { start:'', end:'', expense:true, income:true, advance:true, category:'' },
+  listFilter: { start:'', end:'', expense:true, income:true, advance:true, transfer:true, category:'' },
   listFilterManual: false
 };
 const toLocalStr = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -308,6 +310,14 @@ const DEFAULT_CATS = [
   {name:'その他', type:'income', color:'#C9A0FF', order:2},
 ];
 const PALETTE = ['#FF5D5D','#FF9F40','#FFD23F','#2FE0A6','#3DC6F0','#5D7DFF','#C9A0FF','#FF6FB0'];
+const DEFAULT_ACCOUNTS = [
+  {name:'口座1', initialBalance:0, order:0},
+  {name:'口座2', initialBalance:0, order:1},
+  {name:'財布', initialBalance:0, order:2},
+  {name:'PayPay', initialBalance:0, order:3},
+  {name:'Suica', initialBalance:0, order:4},
+  {name:'auPAY', initialBalance:0, order:5},
+];
 
 /* ====== Auth ====== */
 const authScreen = document.getElementById('authScreen');
@@ -357,6 +367,7 @@ onAuthStateChanged(auth, async (user) => {
     authScreen.style.display = 'none';
     shell.style.display = 'flex';
     await ensureDefaultCategories();
+    await ensureDefaultAccounts();
     listenAll();
   }else{
     state.uid = null;
@@ -371,6 +382,17 @@ async function ensureDefaultCategories(){
   if(!snap.exists()){
     for(const c of DEFAULT_CATS){
       await addDoc(collection(db,'users',state.uid,'categories'), c);
+    }
+    await setDoc(ref, {done:true});
+  }
+}
+
+async function ensureDefaultAccounts(){
+  const ref = doc(db, 'users', state.uid, 'meta', 'accountsInit');
+  const snap = await getDoc(ref);
+  if(!snap.exists()){
+    for(const a of DEFAULT_ACCOUNTS){
+      await addDoc(collection(db,'users',state.uid,'accounts'), a);
     }
     await setDoc(ref, {done:true});
   }
@@ -391,6 +413,14 @@ function listenAll(){
   }));
   unsubs.push(onSnapshot(collection(db,'users',state.uid,'budgets'), snap => {
     state.budgets = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    render();
+  }));
+  unsubs.push(onSnapshot(collection(db,'users',state.uid,'accounts'), snap => {
+    state.accounts = snap.docs.map(d=>({id:d.id, ...d.data()})).sort((a,b)=>(a.order||0)-(b.order||0));
+    render();
+  }));
+  unsubs.push(onSnapshot(collection(db,'users',state.uid,'transfers'), snap => {
+    state.transfers = snap.docs.map(d=>({id:d.id, ...d.data()}));
     render();
   }));
   unsubs.push(onSnapshot(collection(db,'users',state.uid,'advances'), snap => {
@@ -447,15 +477,29 @@ function getPeriodForDate(refDate){
   return { start: toLocalStr(start), end: toLocalStr(end), startDate: start, endDate: end };
 }
 function getCurrentPeriod(){ return getPeriodForDate(new Date()); }
-function sumContrib(g){ return Object.values(g.contributions||{}).reduce((s,v)=>s+(v||0),0); }
+function contribAmt(v){ return v==null ? 0 : (typeof v==='object' ? (v.amount||0) : v); }
+function contribAccountId(v){ return (v!=null && typeof v==='object') ? (v.accountId||'') : ''; }
+function sumContrib(g){ return Object.values(g.contributions||{}).reduce((s,v)=>s+contribAmt(v),0); }
 function goalCumulative(g){ return g.monthlyTarget>0 ? sumContrib(g) : (g.allocatedAmount||0); }
+function accountBalance(accountId){
+  const acc = state.accounts.find(a=>a.id===accountId);
+  const init = acc ? (acc.initialBalance||0) : 0;
+  const txSum = state.transactions.filter(t=>t.accountId===accountId).reduce((s,t)=> s + (t.type==='income'?t.amount:-t.amount), 0);
+  const transferIn = state.transfers.filter(tr=>tr.toAccountId===accountId).reduce((s,tr)=>s+tr.amount,0);
+  const transferOut = state.transfers.filter(tr=>tr.fromAccountId===accountId).reduce((s,tr)=>s+tr.amount,0);
+  return init + txSum + transferIn - transferOut;
+}
+function accountOptionsHtml(selectedId, includeEmpty){
+  return (includeEmpty?`<option value="">未設定</option>`:'') + state.accounts.map(a=>`<option value="${a.id}" ${selectedId===a.id?'selected':''}>${escapeHtml(a.name)}</option>`).join('');
+}
 function renderHome(){
   const period = getCurrentPeriod();
   const thisMonth = state.transactions.filter(t=> t.date>=period.start && t.date<period.end);
   const monthBalance = thisMonth.reduce((s,t)=> s + (t.type==='income'?t.amount:-t.amount), 0);
   const monthIncome = thisMonth.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
   const monthExpense = thisMonth.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
-  const allBalance = state.transactions.reduce((s,t)=> s + (t.type==='income'?t.amount:-t.amount), 0);
+  const accountBalances = state.accounts.map(a=>({ id:a.id, name:a.name, balance: accountBalance(a.id) }));
+  const allBalance = accountBalances.reduce((s,a)=>s+a.balance, 0);
   const allocatedTotal = state.goals.reduce((s,g)=>s+goalCumulative(g),0);
   const unallocated = allBalance - allocatedTotal;
 
@@ -467,8 +511,8 @@ function renderHome(){
   const budgetRows = computeBudgetRows();
   const reservedSavings = state.goals.reduce((sum,g)=>{
     if(!(g.monthlyTarget>0)) return sum;
-    const actual = g.contributions ? g.contributions[period.start] : undefined;
-    return sum + (actual!=null ? actual : g.monthlyTarget);
+    const actualRaw = g.contributions ? g.contributions[period.start] : undefined;
+    return sum + (actualRaw!=null ? contribAmt(actualRaw) : g.monthlyTarget);
   }, 0);
   const fixedCostsTotal = state.fixedCosts.reduce((s,f)=>s+f.amount,0);
   const budgetTotal = state.budgets.reduce((s,b)=>s+b.amount,0);
@@ -483,9 +527,19 @@ function renderHome(){
   return `
     <h2 class="screen-title">ホーム</h2>
     <div class="card">
-      <div class="card-label">貯蓄残高</div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;">
+        <div class="card-label">貯蓄残高</div>
+        <button class="link-btn" id="openTransferBtn">振替する</button>
+      </div>
       <div class="card-value" style="text-align:right;">${yen(Math.max(0,allBalance))}</div>
       <div style="font-size:11px;color:var(--text-sub);margin-top:4px;text-align:right;">うち未配分:${yen(unallocated)}</div>
+      ${accountBalances.length ? `
+      <div style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px;">
+        ${accountBalances.map(a=>`
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-sub);padding:3px 0;">
+          <span>${escapeHtml(a.name)}</span><span>${yen(a.balance)}</span>
+        </div>`).join('')}
+      </div>` : ''}
     </div>
     ${state.goals.length ? `
     <div class="card">
@@ -641,6 +695,7 @@ function renderInput(){
     </div>
     `}
     <div class="field"><label>金額</label><input type="text" id="inAmt" class="amt-input" placeholder="0" inputmode="numeric"></div>
+    <div class="field"><label>口座${inputType==='advance'?'(任意)':''}</label><select id="inAccount">${accountOptionsHtml('', true)}</select></div>
     <div class="field"><label>日付</label><input type="date" id="inDate" value="${todayStr()}"></div>
     <div class="field"><label>メモ</label><input type="text" id="inMemo" placeholder="任意"></div>
     <div id="inMsg" style="color:var(--danger);font-size:13px;min-height:16px;"></div>
@@ -830,6 +885,13 @@ function renderEdit(){
     <div id="incCatList">${incCats.map(c=>catRow(c)).join('')}</div>
     <button class="add-btn" data-addcat="income">+ 収入カテゴリを追加</button>
 
+    <div class="section-label">口座</div>
+    ${state.accounts.map(a=>`
+      <div class="list-row account-edit-row" data-id="${a.id}" style="cursor:pointer;">
+        <span>${escapeHtml(a.name)}・${yen(accountBalance(a.id))}</span><span class="icon-btn">✎</span>
+      </div>`).join('')}
+    <button class="add-btn" id="addAccount">+ 口座を追加</button>
+
     <div class="section-label">アカウント</div>
     <button class="btn-secondary" id="logoutBtn">ログアウト</button>
   `;
@@ -937,6 +999,13 @@ function renderList(){
       records.push({ id:a.id, kind:'advance', type:'advance', date:a.date, label:'立替・'+a.person, memo:a.memo, amount:a.amount, settled:a.settled });
     });
   }
+  if(f.transfer && !f.category){
+    state.transfers.forEach(tr=>{
+      const fromAcc = state.accounts.find(a=>a.id===tr.fromAccountId);
+      const toAcc = state.accounts.find(a=>a.id===tr.toAccountId);
+      records.push({ id:tr.id, kind:'transfer', type:'transfer', date:tr.date, label: `振替・${fromAcc?fromAcc.name:'?'}→${toAcc?toAcc.name:'?'}`, memo:tr.memo, amount:tr.amount });
+    });
+  }
   if(f.start) records = records.filter(r=>r.date>=f.start);
   if(f.end) records = records.filter(r=>r.date<=f.end);
   if(f.category) records = records.filter(r=>r.categoryId===f.category);
@@ -952,6 +1021,7 @@ function renderList(){
       <label><input type="checkbox" id="fExpense" ${f.expense?'checked':''} style="width:auto;margin-right:4px;">支出</label>
       <label><input type="checkbox" id="fIncome" ${f.income?'checked':''} style="width:auto;margin-right:4px;">収入</label>
       <label><input type="checkbox" id="fAdvance" ${f.advance?'checked':''} style="width:auto;margin-right:4px;">立替</label>
+      <label><input type="checkbox" id="fTransfer" ${f.transfer?'checked':''} style="width:auto;margin-right:4px;">振替</label>
       <select id="fCategory" style="width:auto;">
         <option value="">カテゴリ:すべて</option>
         <optgroup label="支出">
@@ -996,6 +1066,8 @@ function attachScreenEvents(){
   if(state.screen==='home'){
     const advCard = document.getElementById('advSummaryCard');
     if(advCard) advCard.onclick = ()=>{ state.screen='advances'; render(); };
+    const transferBtn = document.getElementById('openTransferBtn');
+    if(transferBtn) transferBtn.onclick = ()=> openTransferForm();
     document.querySelectorAll('.fixed-check').forEach(cb=>{
       cb.onchange = async ()=>{
         const f = state.fixedCosts.find(x=>x.id===cb.dataset.id);
@@ -1003,7 +1075,7 @@ function attachScreenEvents(){
         const period = getCurrentPeriod();
         if(cb.checked){
           const cat = await getFixedCostCategoryId();
-          await addDoc(collection(db,'users',state.uid,'transactions'), { type:'expense', category:cat, amount:f.amount, date:todayStr(), memo:f.name, createdAt:Date.now() });
+          await addDoc(collection(db,'users',state.uid,'transactions'), { type:'expense', category:cat, amount:f.amount, date:todayStr(), memo:f.name, accountId:f.accountId||'', createdAt:Date.now() });
         } else {
           const t = state.transactions.find(t=>t.type==='expense' && t.memo===f.name && t.date>=period.start && t.date<period.end);
           if(t) await deleteDoc(doc(db,'users',state.uid,'transactions',t.id));
@@ -1038,10 +1110,12 @@ function attachScreenEvents(){
     document.getElementById('fExpense').onchange = e=>{ state.listFilter.expense = e.target.checked; render(); };
     document.getElementById('fIncome').onchange = e=>{ state.listFilter.income = e.target.checked; render(); };
     document.getElementById('fAdvance').onchange = e=>{ state.listFilter.advance = e.target.checked; render(); };
+    document.getElementById('fTransfer').onchange = e=>{ state.listFilter.transfer = e.target.checked; render(); };
     document.getElementById('fCategory').onchange = e=>{ state.listFilter.category = e.target.value; render(); };
     document.querySelectorAll('.list-edit').forEach(b=>{
       b.onclick = ()=>{
         if(b.dataset.kind==='advance') openAdvanceForm(state.advances.find(a=>a.id===b.dataset.id));
+        else if(b.dataset.kind==='transfer') openTransferForm(state.transfers.find(t=>t.id===b.dataset.id));
         else openTransactionForm(state.transactions.find(t=>t.id===b.dataset.id));
       };
     });
@@ -1050,7 +1124,7 @@ function attachScreenEvents(){
     });
     document.querySelectorAll('.list-del').forEach(b=>{
       b.onclick = ()=>{
-        const col = b.dataset.kind==='advance' ? 'advances' : 'transactions';
+        const col = b.dataset.kind==='advance' ? 'advances' : (b.dataset.kind==='transfer' ? 'transfers' : 'transactions');
         deleteDoc(doc(db,'users',state.uid,col,b.dataset.id));
       };
     });
@@ -1081,6 +1155,10 @@ function attachScreenEvents(){
     document.getElementById('addFixed').onclick = ()=>openFixedForm(null);
     document.querySelectorAll('.fixed-edit-row').forEach(r=>{
       r.onclick = ()=>openFixedForm(state.fixedCosts.find(f=>f.id===r.dataset.id));
+    });
+    document.getElementById('addAccount').onclick = ()=>openAccountForm(null);
+    document.querySelectorAll('.account-edit-row').forEach(r=>{
+      r.onclick = ()=>openAccountForm(state.accounts.find(a=>a.id===r.dataset.id));
     });
     document.querySelectorAll('[data-addcat]').forEach(b=>{
       b.onclick = ()=>openCategoryForm(null, b.dataset.addcat);
@@ -1212,6 +1290,7 @@ async function saveTransaction(keepGoing){
   if(!amt || amt<=0){ msg.textContent = '金額を正しく入力してください'; return; }
   if(!date){ msg.textContent = '日付を選択してください'; return; }
 
+  const accountId = document.getElementById('inAccount').value;
   if(inputType==='advance'){
     let person = document.getElementById('inPersonSel').value;
     if(person==='__new__'){
@@ -1221,11 +1300,12 @@ async function saveTransaction(keepGoing){
         await addDoc(collection(db,'users',state.uid,'advanceContacts'), { name: person });
       }
     }
-    await addDoc(collection(db,'users',state.uid,'advances'), { person, amount:amt, date, memo, settled:false, receiptImg:null });
+    await addDoc(collection(db,'users',state.uid,'advances'), { person, amount:amt, date, memo, accountId, settled:false, receiptImg:null });
   }else{
     const cat = document.getElementById('inCat').value;
     if(!cat){ msg.textContent = 'カテゴリを選択してください'; return; }
-    await addDoc(collection(db,'users',state.uid,'transactions'), { type:inputType, category:cat, amount:amt, date, memo, createdAt:Date.now() });
+    if(!accountId){ msg.textContent = '口座を選択してください'; return; }
+    await addDoc(collection(db,'users',state.uid,'transactions'), { type:inputType, category:cat, amount:amt, date, memo, accountId, createdAt:Date.now() });
   }
 
   if(keepGoing){
@@ -1248,6 +1328,7 @@ function openTransactionForm(existing, copyMode){
       <select id="tCat">${cats.map(c=>`<option value="${c.id}" ${existing.category===c.id?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}</select>
     </div>
     <div class="form-field"><label>金額(円)</label><input type="text" id="tAmt" class="amt-input" value="${existing.amount.toLocaleString('ja-JP')}" inputmode="numeric"></div>
+    <div class="form-field"><label>口座</label><select id="tAccount">${accountOptionsHtml(existing.accountId, true)}</select></div>
     <div class="form-field"><label>日付</label><input type="date" id="tDate" value="${copyMode?todayStr():existing.date}"></div>
     <div class="form-field"><label>メモ</label><input type="text" id="tMemo" value="${escapeHtml(existing.memo||'')}"></div>
     <div id="tErr" style="color:var(--danger);font-size:12px;min-height:16px;"></div>
@@ -1273,10 +1354,11 @@ function openTransactionForm(existing, copyMode){
     if(!date){ errEl.textContent = '日付を選択してください'; return; }
     const category = document.getElementById('tCat').value;
     const memo = document.getElementById('tMemo').value.trim();
+    const accountId = document.getElementById('tAccount').value;
     if(copyMode){
-      await addDoc(collection(db,'users',state.uid,'transactions'), { type: existing.type, category, amount, date, memo, createdAt:Date.now() });
+      await addDoc(collection(db,'users',state.uid,'transactions'), { type: existing.type, category, amount, date, memo, accountId, createdAt:Date.now() });
     } else {
-      await updateDoc(doc(db,'users',state.uid,'transactions',existing.id), { category, amount, date, memo });
+      await updateDoc(doc(db,'users',state.uid,'transactions',existing.id), { category, amount, date, memo, accountId });
     }
     closeModal();
   };
@@ -1284,7 +1366,9 @@ function openTransactionForm(existing, copyMode){
 function openGoalForm(existing){
   const box = document.getElementById('modalBox');
   const period = getCurrentPeriod();
-  const curContrib = existing && existing.contributions ? existing.contributions[period.start] : undefined;
+  const curContribRaw = existing && existing.contributions ? existing.contributions[period.start] : undefined;
+  const curContrib = curContribRaw!=null ? contribAmt(curContribRaw) : undefined;
+  const curContribAccount = contribAccountId(curContribRaw);
   const cumulative = existing ? sumContrib(existing) : 0;
   box.innerHTML = `
     <div class="mh"><span>${existing?'目標を編集':'目標を追加'}</span><button id="mClose">✕</button></div>
@@ -1296,6 +1380,7 @@ function openGoalForm(existing){
     </div>
     <div id="goalMonthlyWrap" style="display:none;">
       <div class="form-field"><label>今期(${period.start}〜)の実績(円)</label><input type="text" id="goalCurContrib" class="amt-input" value="${curContrib!=null?curContrib.toLocaleString('ja-JP'):''}" inputmode="numeric" placeholder="未入力なら毎月の目標額として計算されます"></div>
+      <div class="form-field"><label>積み立てた口座(任意)</label><select id="goalCurAccount">${accountOptionsHtml(curContribAccount, true)}</select></div>
       ${existing?`<div style="font-size:11px;color:var(--text-sub);margin-bottom:10px;">現在の累計:${yen(cumulative)} / ${yen(existing.targetAmount)}</div>
       <button class="link-btn" id="goalPastBtn" style="margin-bottom:10px;">過去の月の実績を入力・修正</button>`:''}
     </div>
@@ -1337,7 +1422,10 @@ function openGoalForm(existing){
     if(monthlyTarget>0){
       const val = document.getElementById('goalCurContrib').value;
       const contributions = { ...(existing&&existing.contributions||{}) };
-      if(val.trim()!==''){ contributions[period.start] = parseAmt(val); }
+      if(val.trim()!==''){
+        const accId = document.getElementById('goalCurAccount').value;
+        contributions[period.start] = accId ? { amount: parseAmt(val), accountId: accId } : parseAmt(val);
+      }
       data.contributions = contributions;
     } else {
       data.allocatedAmount = parseAmt(document.getElementById('goalAllocated').value);
@@ -1356,6 +1444,7 @@ function openGoalPastContribForm(goal){
     <div class="mh"><span>${escapeHtml(goal.name)}・月ごとの実績</span><button id="mClose">✕</button></div>
     <div class="form-field"><label>対象の期間に含まれる日付</label><input type="date" id="gcDate" value="${todayStr()}"></div>
     <div class="form-field"><label>その期間の実績(円)</label><input type="text" id="gcAmt" class="amt-input" inputmode="numeric"></div>
+    <div class="form-field"><label>積み立てた口座(任意)</label><select id="gcAccount">${accountOptionsHtml('', true)}</select></div>
     <div id="gcErr" style="color:var(--danger);font-size:12px;min-height:16px;"></div>
     <div class="form-actions">
       <button class="cancel" id="fBack">戻る</button>
@@ -1363,7 +1452,7 @@ function openGoalPastContribForm(goal){
     </div>
     <div class="section-label" style="margin-top:14px;">入力済みの期間</div>
     ${rows.length? rows.map(k=>`
-      <div class="list-row" style="cursor:default;"><span>${k}〜(${yen(contributions[k])})</span><span class="icon-btn gc-del" data-key="${k}">✕</span></div>
+      <div class="list-row" style="cursor:default;"><span>${k}〜(${yen(contribAmt(contributions[k]))})</span><span class="icon-btn gc-del" data-key="${k}">✕</span></div>
     `).join('') : '<div class="no-data">まだありません</div>'}
   `;
   document.getElementById('modalOverlay').classList.add('show');
@@ -1374,9 +1463,10 @@ function openGoalPastContribForm(goal){
     const errEl = document.getElementById('gcErr');
     if(!dateVal){ errEl.textContent = '日付を選択してください'; return; }
     const amt = parseAmt(document.getElementById('gcAmt').value);
+    const accId = document.getElementById('gcAccount').value;
     const [yy,mm,dd] = dateVal.split('-').map(Number);
     const p = getPeriodForDate(new Date(yy,mm-1,dd));
-    const newContrib = { ...(goal.contributions||{}), [p.start]: amt };
+    const newContrib = { ...(goal.contributions||{}), [p.start]: accId ? { amount:amt, accountId:accId } : amt };
     await updateDoc(doc(db,'users',state.uid,'goals',goal.id), { contributions: newContrib });
     openGoalPastContribForm({ ...goal, contributions: newContrib });
   };
@@ -1450,6 +1540,7 @@ function openFixedForm(existing){
     <div class="form-field"><label>金額(円)</label><input type="text" id="fAmt" class="amt-input" value="${existing?existing.amount.toLocaleString('ja-JP'):''}" inputmode="numeric"></div>
     <div class="form-field"><label>支払日(毎月何日)</label><select id="fDay">${Array.from({length:31},(_,i)=>i+1).map(d=>`<option value="${d}" ${existing&&existing.day===d?'selected':''}>${d}日</option>`).join('')}</select></div>
     <div class="form-field"><label>支払い方法</label><input type="text" id="fMethod" placeholder="例:引き落とし、カード払い" value="${existing?escapeHtml(existing.method||''):''}"></div>
+    <div class="form-field"><label>引き落とし口座(任意)</label><select id="fAccount">${accountOptionsHtml(existing?existing.accountId:'', true)}</select></div>
     <div class="form-actions">
       <button class="cancel" id="fCancel">キャンセル</button>
       ${existing?'<button class="delete" id="fDelete">削除</button>':''}
@@ -1468,10 +1559,86 @@ function openFixedForm(existing){
       amount: parseAmt(document.getElementById('fAmt').value),
       day: parseInt(document.getElementById('fDay').value)||1,
       method: document.getElementById('fMethod').value.trim(),
+      accountId: document.getElementById('fAccount').value,
     };
     if(!data.name){ return; }
     if(existing) await updateDoc(doc(db,'users',state.uid,'fixedCosts',existing.id), data);
     else await addDoc(collection(db,'users',state.uid,'fixedCosts'), data);
+    closeModal();
+  };
+}
+
+function openTransferForm(existing){
+  const box = document.getElementById('modalBox');
+  box.innerHTML = `
+    <div class="mh"><span>${existing?'振替を編集':'振替する'}</span><button id="mClose">✕</button></div>
+    <div class="form-field"><label>移動元の口座</label>
+      <select id="trFrom">${accountOptionsHtml(existing?existing.fromAccountId:(state.accounts[0]&&state.accounts[0].id))}</select>
+    </div>
+    <div class="form-field"><label>移動先の口座</label>
+      <select id="trTo">${accountOptionsHtml(existing?existing.toAccountId:(state.accounts[1]&&state.accounts[1].id))}</select>
+    </div>
+    <div class="form-field"><label>金額(円)</label><input type="text" id="trAmt" class="amt-input" value="${existing?existing.amount.toLocaleString('ja-JP'):''}" inputmode="numeric"></div>
+    <div class="form-field"><label>日付</label><input type="date" id="trDate" value="${existing?existing.date:todayStr()}"></div>
+    <div class="form-field"><label>メモ(任意)</label><input type="text" id="trMemo" value="${existing?escapeHtml(existing.memo||''):''}"></div>
+    <div id="trErr" style="color:var(--danger);font-size:12px;min-height:16px;"></div>
+    <div class="form-actions">
+      <button class="cancel" id="fCancel">キャンセル</button>
+      ${existing?'<button class="delete" id="fDelete">削除</button>':''}
+      <button class="save" id="fSave">${existing?'保存':'振替する'}</button>
+    </div>
+  `;
+  document.getElementById('modalOverlay').classList.add('show');
+  document.getElementById('mClose').onclick = closeModal;
+  document.getElementById('fCancel').onclick = closeModal;
+  if(existing) document.getElementById('fDelete').onclick = async ()=>{
+    await deleteDoc(doc(db,'users',state.uid,'transfers',existing.id)); closeModal();
+  };
+  document.getElementById('fSave').onclick = async ()=>{
+    const errEl = document.getElementById('trErr');
+    const fromAccountId = document.getElementById('trFrom').value;
+    const toAccountId = document.getElementById('trTo').value;
+    const amount = parseAmt(document.getElementById('trAmt').value);
+    const date = document.getElementById('trDate').value;
+    const memo = document.getElementById('trMemo').value.trim();
+    if(!fromAccountId || !toAccountId){ errEl.textContent = '口座を選択してください'; return; }
+    if(fromAccountId===toAccountId){ errEl.textContent = '移動元と移動先は違う口座を選んでください'; return; }
+    if(amount<=0){ errEl.textContent = '金額を正しく入力してください'; return; }
+    if(!date){ errEl.textContent = '日付を選択してください'; return; }
+    const data = { fromAccountId, toAccountId, amount, date, memo };
+    if(existing) await updateDoc(doc(db,'users',state.uid,'transfers',existing.id), data);
+    else await addDoc(collection(db,'users',state.uid,'transfers'), data);
+    closeModal();
+  };
+}
+
+function openAccountForm(existing){
+  const box = document.getElementById('modalBox');
+  box.innerHTML = `
+    <div class="mh"><span>${existing?'口座を編集':'口座を追加'}</span><button id="mClose">✕</button></div>
+    <div class="form-field"><label>口座名</label><input type="text" id="acName" value="${existing?escapeHtml(existing.name):''}"></div>
+    <div class="form-field"><label>現在の実際の残高(円)</label><input type="text" id="acInit" class="amt-input" value="${existing?(existing.initialBalance||0).toLocaleString('ja-JP'):'0'}" inputmode="numeric"></div>
+    <div style="font-size:11px;color:var(--text-sub);margin-bottom:4px;">${existing?'この金額を基準に、これ以降の記録を足し引きします。残高が合わなくなったら、ここを実際の金額に修正してください':'今、実際にこの口座に入っている金額を入力してください'}</div>
+    <div id="acErr" style="color:var(--danger);font-size:12px;min-height:16px;"></div>
+    <div class="form-actions">
+      <button class="cancel" id="fCancel">キャンセル</button>
+      ${existing?'<button class="delete" id="fDelete">削除</button>':''}
+      <button class="save" id="fSave">保存</button>
+    </div>
+  `;
+  document.getElementById('modalOverlay').classList.add('show');
+  document.getElementById('mClose').onclick = closeModal;
+  document.getElementById('fCancel').onclick = closeModal;
+  if(existing) document.getElementById('fDelete').onclick = async ()=>{
+    await deleteDoc(doc(db,'users',state.uid,'accounts',existing.id)); closeModal();
+  };
+  document.getElementById('fSave').onclick = async ()=>{
+    const errEl = document.getElementById('acErr');
+    const name = document.getElementById('acName').value.trim();
+    const initialBalance = parseAmt(document.getElementById('acInit').value);
+    if(!name){ errEl.textContent = '口座名を入力してください'; return; }
+    if(existing) await updateDoc(doc(db,'users',state.uid,'accounts',existing.id), { name, initialBalance });
+    else await addDoc(collection(db,'users',state.uid,'accounts'), { name, initialBalance, order: state.accounts.length });
     closeModal();
   };
 }
@@ -1635,6 +1802,7 @@ function openAdvanceForm(existing){
     </div>
     <div class="form-field" id="aPersonNewWrap" style="display:none;"><label>相手の名前</label><input type="text" id="aPersonNew" value="${existing&&!state.advanceContacts.some(c=>c.name===existing.person)?escapeHtml(existing.person):''}"></div>
     <div class="form-field"><label>金額(円)</label><input type="text" id="aAmt" class="amt-input" value="${existing?existing.amount.toLocaleString('ja-JP'):''}" inputmode="numeric"></div>
+    <div class="form-field"><label>支払った口座(任意)</label><select id="aAccount">${accountOptionsHtml(existing?existing.accountId:'', true)}</select></div>
     <div class="form-field"><label>日付</label><input type="date" id="aDate" value="${existing?existing.date:todayStr()}"></div>
     <div class="form-field"><label>メモ</label><input type="text" id="aMemo" value="${existing?escapeHtml(existing.memo||''):''}"></div>
     <div class="form-field"><label>レシート写真(任意)</label><input type="file" accept="image/*" id="aReceipt">
@@ -1681,6 +1849,7 @@ function openAdvanceForm(existing){
       amount: parseAmt(document.getElementById('aAmt').value),
       date: document.getElementById('aDate').value,
       memo: document.getElementById('aMemo').value.trim(),
+      accountId: document.getElementById('aAccount').value,
       settled: document.getElementById('aSettled').checked,
       receiptImg: receiptData || null
     };
