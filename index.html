@@ -81,6 +81,12 @@
   .fixed-amount{ flex:0 0 auto; font-size:14px; font-weight:600; text-align:right; }
   .fixed-check{ flex:0 0 auto; width:20px; height:20px; }
   .tag{ font-size:10px; background:var(--accent-bg); color:var(--primary); padding:3px 9px; border-radius:20px; }
+  .account-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:12px; }
+  .account-tile{ background:var(--surface-2); border-radius:var(--radius-sm); padding:10px 12px; }
+  .account-tile .aname{ font-size:11px; color:var(--text-sub); margin-bottom:4px; display:flex; align-items:center; gap:6px; }
+  .account-tile .aname .dot{ width:7px; height:7px; border-radius:50%; background:var(--primary); flex:0 0 auto; }
+  .account-tile .abal{ font-size:15px; font-weight:700; }
+  .account-tile .abal.neg{ color:var(--danger); }
   .days-left{ font-weight:600; font-size:13px; }
   .days-left.soon{ color:var(--danger); }
 
@@ -534,10 +540,11 @@ function renderHome(){
       <div class="card-value" style="text-align:right;">${yen(Math.max(0,allBalance))}</div>
       <div style="font-size:11px;color:var(--text-sub);margin-top:4px;text-align:right;">うち未配分:${yen(unallocated)}</div>
       ${accountBalances.length ? `
-      <div style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px;">
-        ${accountBalances.map(a=>`
-        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-sub);padding:3px 0;">
-          <span>${escapeHtml(a.name)}</span><span>${yen(a.balance)}</span>
+      <div class="account-grid">
+        ${accountBalances.map((a,i)=>`
+        <div class="account-tile">
+          <div class="aname"><span class="dot" style="background:${PALETTE[i%PALETTE.length]}"></span>${escapeHtml(a.name)}</div>
+          <div class="abal ${a.balance<0?'neg':''}">${yen(a.balance)}</div>
         </div>`).join('')}
       </div>` : ''}
     </div>
@@ -886,9 +893,10 @@ function renderEdit(){
     <button class="add-btn" data-addcat="income">+ 収入カテゴリを追加</button>
 
     <div class="section-label">口座</div>
-    ${state.accounts.map(a=>`
+    ${state.accounts.map((a,i)=>`
       <div class="list-row account-edit-row" data-id="${a.id}" style="cursor:pointer;">
-        <span>${escapeHtml(a.name)}・${yen(accountBalance(a.id))}</span><span class="icon-btn">✎</span>
+        <div class="l"><span class="dot" style="background:${PALETTE[i%PALETTE.length]};"></span><span>${escapeHtml(a.name)}</span></div>
+        <span style="display:flex;align-items:center;gap:8px;"><span style="font-weight:600;">${yen(accountBalance(a.id))}</span><span class="icon-btn">✎</span></span>
       </div>`).join('')}
     <button class="add-btn" id="addAccount">+ 口座を追加</button>
 
