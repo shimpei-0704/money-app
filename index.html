@@ -372,8 +372,8 @@ onAuthStateChanged(auth, async (user) => {
     state.uid = user.uid;
     authScreen.style.display = 'none';
     shell.style.display = 'flex';
-    await ensureDefaultCategories();
-    await ensureDefaultAccounts();
+    try { await ensureDefaultCategories(); } catch(e) { console.error(e); }
+    try { await ensureDefaultAccounts(); } catch(e) { console.error(e); }
     listenAll();
   }else{
     state.uid = null;
