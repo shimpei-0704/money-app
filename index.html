@@ -527,12 +527,7 @@ function renderHome(){
   const spentBudgetTotal = budgetRows.reduce((s,r)=>s+r.spent,0);
   const extraExpense = monthExpense - fixedCatExpense - spentBudgetTotal;
   const usableNow = monthIncome - fixedCostsTotal - budgetTotal - reservedSavings - extraExpense;
-  const remainingFixedTotal = state.fixedCosts.reduce((sum,f)=>{
-    const logged = isFixedCostLogged(f, period);
-    return logged ? sum : sum + f.amount;
-  }, 0);
-  const remainingBudgetTotal = budgetRows.reduce((s,r)=> s + Math.max(0, r.amount - r.spent), 0);
-  const carryover = allBalance - remainingFixedTotal - remainingBudgetTotal - reservedSavings;
+  const carryover = allBalance + monthExpense - fixedCostsTotal - budgetTotal - reservedSavings - extraExpense;
   const unsettledAdv = state.advances.filter(a=>!a.settled);
   const advTotal = unsettledAdv.reduce((s,a)=>s+a.amount,0);
 
