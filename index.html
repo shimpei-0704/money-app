@@ -85,7 +85,7 @@
   .account-tile{ background:var(--surface-2); border-radius:var(--radius-sm); padding:9px 8px; min-width:0; }
   .account-tile .aname{ font-size:10px; color:var(--text-sub); margin-bottom:4px; display:flex; align-items:center; gap:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .account-tile .aname .dot{ width:6px; height:6px; border-radius:50%; background:var(--primary); flex:0 0 auto; }
-  .account-tile .abal{ font-size:12.5px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .account-tile .abal{ font-size:12.5px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-align:right; }
   .account-tile .abal.neg{ color:var(--danger); }
   .days-left{ font-weight:600; font-size:13px; }
   .days-left.soon{ color:var(--danger); }
@@ -526,7 +526,12 @@ function renderHome(){
   const fixedCatExpense = thisMonth.filter(t=> t.type==='expense' && t.category===fixedCatId).reduce((s,t)=>s+t.amount,0);
   const nonFixedExpense = monthExpense - fixedCatExpense;
   const usableNow = monthIncome - fixedCostsTotal - budgetTotal - reservedSavings - nonFixedExpense;
-  const carryover = allBalance - monthIncome + usableNow;
+  const remainingFixedTotal = state.fixedCosts.reduce((sum,f)=>{
+    const logged = state.transactions.some(t=>t.type==='expense' && t.memo===f.name && t.date>=period.start && t.date<period.end);
+    return logged ? sum : sum + f.amount;
+  }, 0);
+  const remainingBudgetTotal = budgetRows.reduce((s,r)=> s + Math.max(0, r.amount - r.spent), 0);
+  const carryover = allBalance - remainingFixedTotal - remainingBudgetTotal - reservedSavings;
   const unsettledAdv = state.advances.filter(a=>!a.settled);
   const advTotal = unsettledAdv.reduce((s,a)=>s+a.amount,0);
 
