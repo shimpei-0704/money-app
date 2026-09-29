@@ -276,6 +276,7 @@ setPersistence(auth, browserLocalPersistence);
 /* ====== 状態 ====== */
 const state = {
   uid: null,
+  dataReady: false,
   screen: 'home',
   prevScreen: 'edit',
   transactions: [],
@@ -386,6 +387,7 @@ onAuthStateChanged(auth, async (user) => {
     listenAll();
   }else{
     state.uid = null;
+    state.dataReady = false;
     authScreen.style.display = 'flex';
     shell.style.display = 'none';
   }
@@ -414,53 +416,59 @@ async function ensureDefaultAccounts(){
 }
 
 function listenAll(){
+  const loadedKeys = new Set();
+  const totalKeys = 12;
+  function markLoaded(key){
+    loadedKeys.add(key);
+    if(!state.dataReady && loadedKeys.size>=totalKeys) state.dataReady = true;
+  }
   unsubs.push(onSnapshot(collection(db,'users',state.uid,'transactions'), snap => {
     state.transactions = snap.docs.map(d=>({id:d.id, ...d.data()}));
-    render();
+    markLoaded('transactions'); render();
   }));
   unsubs.push(onSnapshot(collection(db,'users',state.uid,'categories'), snap => {
     state.categories = snap.docs.map(d=>({id:d.id, ...d.data()})).sort((a,b)=>a.order-b.order);
-    render();
+    markLoaded('categories'); render();
   }));
   unsubs.push(onSnapshot(collection(db,'users',state.uid,'fixedCosts'), snap => {
     state.fixedCosts = snap.docs.map(d=>({id:d.id, ...d.data()}));
-    render();
+    markLoaded('fixedCosts'); render();
   }));
   unsubs.push(onSnapshot(collection(db,'users',state.uid,'budgets'), snap => {
     state.budgets = snap.docs.map(d=>({id:d.id, ...d.data()}));
-    render();
+    markLoaded('budgets'); render();
   }));
   unsubs.push(onSnapshot(collection(db,'users',state.uid,'accounts'), snap => {
     state.accounts = snap.docs.map(d=>({id:d.id, ...d.data()})).sort((a,b)=>(a.order||0)-(b.order||0));
-    render();
+    markLoaded('accounts'); render();
   }));
   unsubs.push(onSnapshot(collection(db,'users',state.uid,'transfers'), snap => {
     state.transfers = snap.docs.map(d=>({id:d.id, ...d.data()}));
-    render();
+    markLoaded('transfers'); render();
   }));
   unsubs.push(onSnapshot(collection(db,'users',state.uid,'advances'), snap => {
     state.advances = snap.docs.map(d=>({id:d.id, ...d.data()}));
-    render();
+    markLoaded('advances'); render();
   }));
   unsubs.push(onSnapshot(collection(db,'users',state.uid,'advanceContacts'), snap => {
     state.advanceContacts = snap.docs.map(d=>({id:d.id, ...d.data()}));
-    render();
+    markLoaded('advanceContacts'); render();
   }));
   unsubs.push(onSnapshot(collection(db,'users',state.uid,'shoppingHeadings'), snap => {
     state.shoppingHeadings = snap.docs.map(d=>({id:d.id, ...d.data()})).sort((a,b)=>(a.order||0)-(b.order||0));
-    render();
+    markLoaded('shoppingHeadings'); render();
   }));
   unsubs.push(onSnapshot(collection(db,'users',state.uid,'shoppingItems'), snap => {
     state.shoppingItems = snap.docs.map(d=>({id:d.id, ...d.data()}));
-    render();
+    markLoaded('shoppingItems'); render();
   }));
   unsubs.push(onSnapshot(doc(db,'users',state.uid,'meta','settings'), snap => {
     state.monthStartDay = snap.exists() ? (snap.data().monthStartDay||1) : 1;
-    render();
+    markLoaded('settings'); render();
   }));
   unsubs.push(onSnapshot(collection(db,'users',state.uid,'goals'), snap => {
     state.goals = snap.docs.map(d=>({id:d.id, ...d.data()}));
-    render();
+    markLoaded('goals'); render();
   }));
 }
 
@@ -473,6 +481,10 @@ document.querySelectorAll('.tab-btn').forEach(btn=>{
 function render(){
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.screen===state.screen));
   const area = document.getElementById('screenArea');
+  if(!state.dataReady){
+    area.innerHTML = '<div class="no-data" style="margin-top:60px;">読み込み中…</div>';
+    return;
+  }
   if(state.screen==='home') area.innerHTML = renderHome();
   if(state.screen==='input') area.innerHTML = renderInput();
   if(state.screen==='summary') area.innerHTML = renderCalendar() + renderSummary() + renderList();
@@ -574,7 +586,7 @@ function renderHome(){
         </div>`;
       }).join('')}
     </div>` : ''}
-    <div class="card-label" style="margin-bottom:-2px;">${period.startDate.getMonth()+1}/${period.startDate.getDate()} 〜 ${period.endDate.getMonth()+1}/${period.endDate.getDate()-1}</div>
+    <div class="card-label" style="margin-bottom:-2px;">${(()=>{ const endInc=new Date(period.endDate); endInc.setDate(endInc.getDate()-1); return `${period.startDate.getMonth()+1}/${period.startDate.getDate()} 〜 ${endInc.getMonth()+1}/${endInc.getDate()}`; })()}</div>
     <div class="row2">
       <div class="card"><div class="card-label">今月の収入</div><div class="card-value" style="color:var(--success);text-align:right;">+${yen(monthIncome)}</div></div>
       <div class="card">
