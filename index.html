@@ -524,11 +524,11 @@ function renderHome(){
   const fixedCat = state.categories.find(c=>c.type==='expense' && c.name==='固定費');
   const fixedCatId = fixedCat ? fixedCat.id : null;
   const fixedCatExpense = thisMonth.filter(t=> t.type==='expense' && t.category===fixedCatId).reduce((s,t)=>s+t.amount,0);
-  const budgetCatIds = state.budgets.map(b=>b.categoryId);
-  const extraExpense = thisMonth.filter(t=> t.type==='expense' && t.category!==fixedCatId && !budgetCatIds.includes(t.category)).reduce((s,t)=>s+t.amount,0);
+  const spentBudgetTotal = budgetRows.reduce((s,r)=>s+r.spent,0);
+  const extraExpense = monthExpense - fixedCatExpense - spentBudgetTotal;
   const usableNow = monthIncome - fixedCostsTotal - budgetTotal - reservedSavings - extraExpense;
   const remainingFixedTotal = state.fixedCosts.reduce((sum,f)=>{
-    const logged = state.transactions.some(t=>t.type==='expense' && t.memo===f.name && t.date>=period.start && t.date<period.end);
+    const logged = isFixedCostLogged(f, period);
     return logged ? sum : sum + f.amount;
   }, 0);
   const remainingBudgetTotal = budgetRows.reduce((s,r)=> s + Math.max(0, r.amount - r.spent), 0);
@@ -604,7 +604,7 @@ function renderHome(){
         <div style="font-size:12px;color:var(--text-sub);">合計 ${yen(fixedSorted.reduce((s,f)=>s+f.amount,0))}</div>
       </div>
       ${fixedSorted.length ? fixedSorted.map(f=>{
-        const logged = state.transactions.some(t=>t.type==='expense' && t.memo===f.name && t.date>=period.start && t.date<period.end);
+        const logged = isFixedCostLogged(f, period);
         return `
         <div class="fixed-item">
           <div class="fixed-item-row">
@@ -1067,6 +1067,14 @@ function catRow(c){
 
 function escapeHtml(s){ return String(s??'').replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
+function findFixedCostTransaction(f, period){
+  const byId = state.transactions.find(t=>t.type==='expense' && t.fixedCostId===f.id && t.date>=period.start && t.date<period.end);
+  if(byId) return byId;
+  return state.transactions.find(t=>t.type==='expense' && !t.fixedCostId && t.memo===f.name && t.date>=period.start && t.date<period.end);
+}
+function isFixedCostLogged(f, period){
+  return !!findFixedCostTransaction(f, period);
+}
 async function getFixedCostCategoryId(){
   const existing = state.categories.find(c=>c.type==='expense' && c.name==='固定費');
   if(existing) return existing.id;
@@ -1089,9 +1097,9 @@ function attachScreenEvents(){
         const period = getCurrentPeriod();
         if(cb.checked){
           const cat = await getFixedCostCategoryId();
-          await addDoc(collection(db,'users',state.uid,'transactions'), { type:'expense', category:cat, amount:f.amount, date:todayStr(), memo:f.name, accountId:f.accountId||'', createdAt:Date.now() });
+          await addDoc(collection(db,'users',state.uid,'transactions'), { type:'expense', category:cat, amount:f.amount, date:todayStr(), memo:f.name, accountId:f.accountId||'', fixedCostId:f.id, createdAt:Date.now() });
         } else {
-          const t = state.transactions.find(t=>t.type==='expense' && t.memo===f.name && t.date>=period.start && t.date<period.end);
+          const t = findFixedCostTransaction(f, period);
           if(t) await deleteDoc(doc(db,'users',state.uid,'transactions',t.id));
         }
       };
