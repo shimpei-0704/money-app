@@ -102,6 +102,12 @@
   .legend{ display:flex; gap:14px; font-size:11px; color:var(--text-sub); margin-top:10px; }
   .legend .sw{ display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:4px; vertical-align:-1px; }
   .filter-row{ display:flex; gap:8px; margin-bottom:14px; }
+  .cat-select-btn{ background:var(--surface-2); color:var(--text); border:1px solid var(--border); border-radius:20px; padding:6px 12px; font-size:13px; }
+  .cat-select-panel{ background:var(--surface-2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:10px 12px; margin-bottom:14px; }
+  .cat-select-group-label{ font-size:11px; color:var(--text-sub); margin:8px 0 4px; }
+  .cat-select-group-label:first-child{ margin-top:0; }
+  .cat-select-opt{ display:flex; align-items:center; gap:6px; font-size:13px; padding:4px 0; }
+  .cat-select-opt input{ width:auto; }
   .filter-row select, .filter-row input{ flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); font-size:13px; }
 
   /* ---- Modal ---- */
@@ -133,8 +139,9 @@
   .pie-wrap{ display:flex; justify-content:center; margin-bottom:14px; }
   .pie-legend{ display:flex; flex-wrap:wrap; gap:8px 14px; justify-content:center; font-size:12px; margin-bottom:18px; }
   .bar-chart{ display:flex; align-items:flex-end; gap:4px; height:100px; border-top:1px solid var(--border); padding-top:6px; }
-  .bar-chart .bar{ flex:1; background:var(--danger-strong); border-radius:3px 3px 0 0; min-height:2px; position:relative; }
+  .bar-chart .bar{ flex:1; background:var(--danger-strong); border-radius:3px 3px 0 0; min-height:2px; position:relative; cursor:pointer; }
   .bar-chart .bar.income{ background:var(--success); }
+  .bar-chart .bar.selected{ outline:2px solid var(--primary); outline-offset:1px; }
   .trend-toggle{ display:flex; gap:6px; margin-bottom:10px; }
   .trend-gran-btn{ padding:5px 14px; font-size:12px; border:1px solid var(--border); border-radius:20px; background:var(--surface); color:var(--text-sub); cursor:pointer; }
   .trend-gran-btn.active{ background:var(--primary); color:#fff; border-color:var(--primary); }
@@ -185,9 +192,9 @@
   .heading-block{ margin-bottom:18px; }
   .heading-row{ display:flex; align-items:center; gap:8px; padding:8px 0; border-bottom:1px solid var(--border-strong,var(--border)); cursor:grab; }
   .heading-items{ min-height:4px; }
-  .add-item-row{ display:flex; gap:8px; margin-top:8px; }
-  .add-item-row input{ flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); color:var(--text); font-size:13px; }
-  .add-item-row button{ padding:0 14px; background:var(--primary); color:#fff; border:none; border-radius:var(--radius-sm); font-size:13px; }
+  .add-item-row{ display:flex; gap:8px; margin-top:8px; align-items:flex-end; }
+  .add-item-row textarea{ flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); color:var(--text); font-size:13px; resize:vertical; min-height:44px; font-family:inherit; }
+  .add-item-row button{ padding:10px 14px; background:var(--primary); color:#fff; border:none; border-radius:var(--radius-sm); font-size:13px; }
   .shop-item{ display:flex; align-items:center; gap:10px; padding:9px 0; border-bottom:1px solid var(--border); }
   .shop-item input[type=checkbox]{ width:19px; height:19px; accent-color:var(--primary); }
   .shop-item.done{ opacity:0.6; }
@@ -294,8 +301,10 @@ const state = {
   rangePicking: null,
   authMode: 'login',
   advanceFilter: { person: 'all', status: 'all' },
-  listFilter: { start:'', end:'', expense:true, income:true, advance:true, transfer:true, category:'' },
-  listFilterManual: false
+  listFilter: { start:'', end:'', expense:true, income:true, advance:true, transfer:true, categories:[] },
+  listFilterManual: false,
+  listCatOpen: false,
+  trendSelectedIdx: null
 };
 const toLocalStr = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 const todayStr = () => toLocalStr(new Date());
@@ -772,10 +781,12 @@ function renderSummary(){
   const expenseOnly = !!state.trendExpenseOnly;
   const valByDay = expenseOnly ? expByDay : netByDay;
   let buckets = [];
+  const dowNames = ['日','月','火','水','木','金','土'];
   if(gran==='day'){
     buckets = trendDays.map(day=>{
       const [,mo,da] = day.split('-');
-      return { label: `${parseInt(mo)}/${parseInt(da)}`, value: valByDay[day] };
+      const dow = new Date(day+'T00:00:00').getDay();
+      return { label: `${parseInt(mo)}/${parseInt(da)}(${dowNames[dow]})`, value: valByDay[day], dow };
     });
   } else if(gran==='week'){
     for(let i=0;i<trendDays.length;i+=7){
@@ -824,11 +835,19 @@ function renderSummary(){
       <button class="link-btn" id="trendRangeBtn" data-auto-start="${autoTrendStart}" data-auto-end="${autoTrendEnd}" style="font-size:11px;">期間を設定</button>
     </div>
     ${dayVals.some(v=>v!==0) ? `
+      <div id="trendSelectedInfo" style="text-align:center;font-size:13px;font-weight:600;margin-bottom:6px;min-height:18px;">
+        ${(state.trendSelectedIdx!=null && buckets[state.trendSelectedIdx]) ? `${escapeHtml(buckets[state.trendSelectedIdx].label)}:${buckets[state.trendSelectedIdx].value>=0?'+':''}${yen(buckets[state.trendSelectedIdx].value)}` : ''}
+      </div>
       <div class="trend-chart-wrap">
         <div class="trend-yaxis"><span>${yen(maxVal)}</span><span>¥0</span></div>
         <div class="trend-chart-inner">
-          <div class="bar-chart">${dayVals.map(v=> v===0 ? `<div class="bar" style="height:0;background:transparent;"></div>` : `<div class="bar ${(!expenseOnly && v>=0)?'income':''}" style="height:${Math.max(3,Math.abs(v)/maxVal*100)}%"></div>`).join('')}</div>
-          <div class="trend-xaxis">${buckets.map((b,i)=>`<span>${i%labelEvery===0?escapeHtml(b.label):''}</span>`).join('')}</div>
+          <div class="bar-chart">${dayVals.map((v,i)=> `<div class="bar ${(!expenseOnly && v>=0)?'income':''} ${state.trendSelectedIdx===i?'selected':''}" data-idx="${i}" style="height:${v===0?'2px':Math.max(3,Math.abs(v)/maxVal*100)+'%'};${v===0?'background:var(--border);':''}"></div>`).join('')}</div>
+          <div class="trend-xaxis">${buckets.map((b,i)=>{
+            if(i%labelEvery!==0) return '<span></span>';
+            let color = '';
+            if(gran==='day'){ if(b.dow===0) color='color:var(--danger);'; else if(b.dow===6) color='color:#4DA6FF;'; }
+            return `<span style="${color}">${escapeHtml(b.label)}</span>`;
+          }).join('')}</div>
         </div>
       </div>
     ` : '<div class="no-data">この期間の記録がありません</div>'}
@@ -979,7 +998,7 @@ function renderShopping(){
             </div>`).join('') : ''}
         </div>
         <div class="add-item-row">
-          <input type="text" class="newItemInput" data-heading="${h.id}" placeholder="${escapeHtml(h.name)}に追加するもの">
+          <textarea class="newItemInput" rows="2" data-heading="${h.id}" placeholder="${escapeHtml(h.name)}に追加するもの"></textarea>
           <button class="addItemBtn" data-heading="${h.id}">追加</button>
         </div>
       </div>`;
@@ -1001,24 +1020,26 @@ function renderList(){
     if(t.type==='expense' && !f.expense) return;
     if(t.type==='income' && !f.income) return;
     const cat = state.categories.find(c=>c.id===t.category);
-    records.push({ id:t.id, kind:'transaction', type:t.type, date:t.date, label: cat?cat.name:'不明', categoryId:t.category, memo:t.memo, amount:t.amount });
+    records.push({ id:t.id, kind:'transaction', type:t.type, date:t.date, createdAt:t.createdAt||0, label: cat?cat.name:'不明', categoryId:t.category, memo:t.memo, amount:t.amount });
   });
-  if(f.advance && !f.category){
+  if(f.advance && !(f.categories && f.categories.length)){
     state.advances.forEach(a=>{
-      records.push({ id:a.id, kind:'advance', type:'advance', date:a.date, label:'立替・'+a.person, memo:a.memo, amount:a.amount, settled:a.settled });
+      records.push({ id:a.id, kind:'advance', type:'advance', date:a.date, createdAt:a.createdAt||0, label:'立替・'+a.person, memo:a.memo, amount:a.amount, settled:a.settled });
     });
   }
-  if(f.transfer && !f.category){
+  if(f.transfer && !(f.categories && f.categories.length)){
     state.transfers.forEach(tr=>{
       const fromAcc = state.accounts.find(a=>a.id===tr.fromAccountId);
       const toAcc = state.accounts.find(a=>a.id===tr.toAccountId);
-      records.push({ id:tr.id, kind:'transfer', type:'transfer', date:tr.date, label: `振替・${fromAcc?fromAcc.name:'?'}→${toAcc?toAcc.name:'?'}`, memo:tr.memo, amount:tr.amount });
+      records.push({ id:tr.id, kind:'transfer', type:'transfer', date:tr.date, createdAt:tr.createdAt||0, label: `振替・${fromAcc?fromAcc.name:'?'}→${toAcc?toAcc.name:'?'}`, memo:tr.memo, amount:tr.amount });
     });
   }
   if(f.start) records = records.filter(r=>r.date>=f.start);
   if(f.end) records = records.filter(r=>r.date<=f.end);
-  if(f.category) records = records.filter(r=>r.categoryId===f.category);
-  records.sort((a,b)=> b.date.localeCompare(a.date));
+  if(f.categories && f.categories.length) records = records.filter(r=>f.categories.includes(r.categoryId));
+  records.sort((a,b)=> b.date.localeCompare(a.date) || (b.createdAt-a.createdAt));
+
+  const catBtnLabel = f.categories.length ? `カテゴリ:${f.categories.length}件選択` : 'カテゴリ:すべて';
 
   return `
     <h2 class="screen-title">一覧</h2>
@@ -1031,16 +1052,20 @@ function renderList(){
       <label><input type="checkbox" id="fIncome" ${f.income?'checked':''} style="width:auto;margin-right:4px;">収入</label>
       <label><input type="checkbox" id="fAdvance" ${f.advance?'checked':''} style="width:auto;margin-right:4px;">立替</label>
       <label><input type="checkbox" id="fTransfer" ${f.transfer?'checked':''} style="width:auto;margin-right:4px;">振替</label>
-      <select id="fCategory" style="width:auto;">
-        <option value="">カテゴリ:すべて</option>
-        <optgroup label="支出">
-          ${state.categories.filter(c=>c.type==='expense').map(c=>`<option value="${c.id}" ${f.category===c.id?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}
-        </optgroup>
-        <optgroup label="収入">
-          ${state.categories.filter(c=>c.type==='income').map(c=>`<option value="${c.id}" ${f.category===c.id?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}
-        </optgroup>
-      </select>
+      <button type="button" id="fCategoryBtn" class="cat-select-btn">${catBtnLabel} ${state.listCatOpen?'▲':'▼'}</button>
     </div>
+    ${state.listCatOpen ? `
+    <div id="fCategoryPanel" class="cat-select-panel">
+      <div class="cat-select-group-label">支出</div>
+      ${state.categories.filter(c=>c.type==='expense').map(c=>`
+        <label class="cat-select-opt"><input type="checkbox" class="fCatOpt" value="${c.id}" ${f.categories.includes(c.id)?'checked':''}>${escapeHtml(c.name)}</label>
+      `).join('')}
+      <div class="cat-select-group-label">収入</div>
+      ${state.categories.filter(c=>c.type==='income').map(c=>`
+        <label class="cat-select-opt"><input type="checkbox" class="fCatOpt" value="${c.id}" ${f.categories.includes(c.id)?'checked':''}>${escapeHtml(c.name)}</label>
+      `).join('')}
+      <button type="button" class="link-btn" id="fCategoryClear" style="margin-top:8px;">選択をクリア</button>
+    </div>` : ''}
     ${records.length ? records.map(r=>`
       <div class="list-record-row" data-id="${r.id}" data-kind="${r.kind}" style="display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--border);">
         <div style="flex:0 0 62px;font-size:11px;color:var(--text-sub);">${r.date.slice(5).replace('-','/')}</div>
@@ -1115,9 +1140,16 @@ function attachScreenEvents(){
     };
     attachRangeCalEvents();
     document.querySelectorAll('.trend-gran-btn[data-gran]').forEach(b=>{
-      b.onclick = ()=>{ state.trendGranularity = b.dataset.gran; render(); };
+      b.onclick = ()=>{ state.trendGranularity = b.dataset.gran; state.trendSelectedIdx = null; render(); };
     });
     document.getElementById('trendExpenseToggle').onclick = ()=>{ state.trendExpenseOnly = !state.trendExpenseOnly; render(); };
+    document.querySelectorAll('.bar-chart .bar').forEach(el=>{
+      el.onclick = ()=>{
+        const idx = parseInt(el.dataset.idx);
+        state.trendSelectedIdx = state.trendSelectedIdx===idx ? null : idx;
+        render();
+      };
+    });
     document.getElementById('trendRangeBtn').onclick = (e)=>{
       const btn = e.currentTarget;
       openTrendRangeForm(btn.dataset.autoStart, btn.dataset.autoEnd);
@@ -1128,7 +1160,18 @@ function attachScreenEvents(){
     document.getElementById('fIncome').onchange = e=>{ state.listFilter.income = e.target.checked; render(); };
     document.getElementById('fAdvance').onchange = e=>{ state.listFilter.advance = e.target.checked; render(); };
     document.getElementById('fTransfer').onchange = e=>{ state.listFilter.transfer = e.target.checked; render(); };
-    document.getElementById('fCategory').onchange = e=>{ state.listFilter.category = e.target.value; render(); };
+    document.getElementById('fCategoryBtn').onclick = ()=>{ state.listCatOpen = !state.listCatOpen; render(); };
+    document.querySelectorAll('.fCatOpt').forEach(cb=>{
+      cb.onchange = ()=>{
+        const v = cb.value;
+        const idx = state.listFilter.categories.indexOf(v);
+        if(cb.checked){ if(idx===-1) state.listFilter.categories.push(v); }
+        else { if(idx!==-1) state.listFilter.categories.splice(idx,1); }
+        render();
+      };
+    });
+    const fCatClear = document.getElementById('fCategoryClear');
+    if(fCatClear) fCatClear.onclick = ()=>{ state.listFilter.categories = []; render(); };
     document.querySelectorAll('.list-edit').forEach(b=>{
       b.onclick = ()=>{
         if(b.dataset.kind==='advance') openAdvanceForm(state.advances.find(a=>a.id===b.dataset.id));
@@ -1216,7 +1259,7 @@ function attachScreenEvents(){
       b.onclick = ()=>addShoppingItem(b.dataset.heading);
     });
     document.querySelectorAll('.newItemInput').forEach(inp=>{
-      inp.addEventListener('keydown', e=>{ if(e.key==='Enter') addShoppingItem(inp.dataset.heading); });
+      inp.addEventListener('keydown', e=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); addShoppingItem(inp.dataset.heading); } });
     });
     document.querySelectorAll('.shop-check').forEach(cb=>{
       cb.onchange = ()=> updateDoc(doc(db,'users',state.uid,'shoppingItems',cb.dataset.id), { done: cb.checked });
@@ -1317,7 +1360,7 @@ async function saveTransaction(keepGoing){
         await addDoc(collection(db,'users',state.uid,'advanceContacts'), { name: person });
       }
     }
-    await addDoc(collection(db,'users',state.uid,'advances'), { person, amount:amt, date, memo, accountId, settled:false, receiptImg:null });
+    await addDoc(collection(db,'users',state.uid,'advances'), { person, amount:amt, date, memo, accountId, settled:false, receiptImg:null, createdAt:Date.now() });
   }else{
     const cat = document.getElementById('inCat').value;
     if(!cat){ msg.textContent = 'カテゴリを選択してください'; return; }
@@ -1624,7 +1667,7 @@ function openTransferForm(existing){
     if(!date){ errEl.textContent = '日付を選択してください'; return; }
     const data = { fromAccountId, toAccountId, amount, date, memo };
     if(existing) await updateDoc(doc(db,'users',state.uid,'transfers',existing.id), data);
-    else await addDoc(collection(db,'users',state.uid,'transfers'), data);
+    else await addDoc(collection(db,'users',state.uid,'transfers'), {...data, createdAt:Date.now()});
     closeModal();
   };
 }
@@ -1873,7 +1916,7 @@ function openAdvanceForm(existing){
     if(data.amount<=0){ errEl.textContent = '金額を正しく入力してください'; return; }
     if(!data.date){ errEl.textContent = '日付を選択してください'; return; }
     if(existing) await updateDoc(doc(db,'users',state.uid,'advances',existing.id), data);
-    else await addDoc(collection(db,'users',state.uid,'advances'), data);
+    else await addDoc(collection(db,'users',state.uid,'advances'), {...data, createdAt:Date.now()});
     closeModal();
   };
 }
@@ -1953,7 +1996,7 @@ function openShoppingItemForm(existing){
   const box = document.getElementById('modalBox');
   box.innerHTML = `
     <div class="mh"><span>アイテムを編集</span><button id="mClose">✕</button></div>
-    <div class="form-field"><label>内容</label><input type="text" id="itemName" value="${escapeHtml(existing.name)}"></div>
+    <div class="form-field"><label>内容</label><textarea id="itemName" rows="4" style="width:100%;resize:vertical;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-size:14px;font-family:inherit;">${escapeHtml(existing.name)}</textarea></div>
     <div class="form-actions">
       <button class="cancel" id="fCancel">キャンセル</button>
       <button class="delete" id="fDelete">削除</button>
