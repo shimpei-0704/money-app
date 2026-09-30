@@ -520,6 +520,13 @@ function getPeriodForDate(refDate){
   return { start: toLocalStr(startInfo.date), end: toLocalStr(endInfo.date), startDate: startInfo.date, endDate: endInfo.date, key: startInfo.key, overridden: startInfo.overridden, defaultDay: s };
 }
 function getCurrentPeriod(){ return getPeriodForDate(new Date()); }
+function getNextPeriodInfo(period){
+  const s = period.defaultDay;
+  const [ky,km] = period.key.split('-').map(Number); // ky-km = this period's base year-month (km is 1-indexed)
+  const startInfo = resolvePeriodStart(ky, km, s); // km is already "next month" in 0-indexed terms
+  const endInfo = resolvePeriodStart(ky, km+1, s);
+  return { start: toLocalStr(startInfo.date), end: toLocalStr(endInfo.date), startDate: startInfo.date, endDate: endInfo.date, key: startInfo.key, overridden: startInfo.overridden, defaultDay: s };
+}
 function contribAmt(v){ return v==null ? 0 : (typeof v==='object' ? (v.amount||0) : v); }
 function contribAccountId(v){ return (v!=null && typeof v==='object') ? (v.accountId||'') : ''; }
 function sumContrib(g){ return Object.values(g.contributions||{}).reduce((s,v)=>s+contribAmt(v),0); }
@@ -602,7 +609,10 @@ function renderHome(){
         </div>`;
       }).join('')}
     </div>` : ''}
-    <button type="button" id="periodLabelBtn" class="link-btn" style="margin-bottom:2px;font-size:12px;">${(()=>{ const endInc=new Date(period.endDate); endInc.setDate(endInc.getDate()-1); return `${period.startDate.getMonth()+1}/${period.startDate.getDate()} 〜 ${endInc.getMonth()+1}/${endInc.getDate()}`; })()}${period.overridden?'(開始日を個別設定中)':''} ✎</button>
+    <div style="display:flex;gap:12px;align-items:center;margin-bottom:2px;">
+      <button type="button" id="periodLabelBtn" class="link-btn" style="font-size:12px;">${(()=>{ const endInc=new Date(period.endDate); endInc.setDate(endInc.getDate()-1); return `${period.startDate.getMonth()+1}/${period.startDate.getDate()} 〜 ${endInc.getMonth()+1}/${endInc.getDate()}`; })()}${period.overridden?'(個別設定中)':''} ✎</button>
+      <button type="button" id="nextPeriodBtn" class="link-btn" style="font-size:12px;">来月の開始日を設定</button>
+    </div>
     <div class="row2">
       <div class="card"><div class="card-label">今月の収入</div><div class="card-value" style="color:var(--success);text-align:right;">+${yen(monthIncome)}</div></div>
       <div class="card">
@@ -1141,6 +1151,8 @@ function attachScreenEvents(){
     if(transferBtn) transferBtn.onclick = ()=> openTransferForm();
     const periodLabelBtn = document.getElementById('periodLabelBtn');
     if(periodLabelBtn) periodLabelBtn.onclick = ()=> openPeriodOverrideForm(getCurrentPeriod());
+    const nextPeriodBtn = document.getElementById('nextPeriodBtn');
+    if(nextPeriodBtn) nextPeriodBtn.onclick = ()=> openPeriodOverrideForm(getNextPeriodInfo(getCurrentPeriod()));
     document.querySelectorAll('.fixed-check').forEach(cb=>{
       cb.onchange = async ()=>{
         const f = state.fixedCosts.find(x=>x.id===cb.dataset.id);
@@ -1594,9 +1606,9 @@ function openPeriodForm(){
 function openPeriodOverrideForm(period){
   const box = document.getElementById('modalBox');
   box.innerHTML = `
-    <div class="mh"><span>今期の開始日を個別に変更</span><button id="mClose">✕</button></div>
-    <div style="font-size:11px;color:var(--text-sub);margin-bottom:10px;">通常は毎月${period.defaultDay}日開始ですが、給料日が土日祝と重なった場合など、この期だけ開始日をずらしたいときに使います。</div>
-    <div class="form-field"><label>この期の開始日</label><input type="date" id="poDate" value="${period.start}"></div>
+    <div class="mh"><span>${period.key.split('-')[0]}年${parseInt(period.key.split('-')[1])}月の開始日を設定</span><button id="mClose">✕</button></div>
+    <div style="font-size:11px;color:var(--text-sub);margin-bottom:10px;">通常は毎月${period.defaultDay}日開始ですが、給料日が土日祝と重なった場合など、この月だけ開始日をずらしたいときに使います。</div>
+    <div class="form-field"><label>開始日</label><input type="date" id="poDate" value="${period.start}"></div>
     <div class="form-actions">
       <button class="cancel" id="fCancel">キャンセル</button>
       ${period.overridden?`<button class="delete" id="fReset">自動(毎月${period.defaultDay}日)に戻す</button>`:''}
