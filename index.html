@@ -108,6 +108,7 @@
   .cat-select-group-label:first-child{ margin-top:0; }
   .cat-select-opt{ display:flex; align-items:center; gap:6px; font-size:13px; padding:4px 0; }
   .cat-select-opt input{ width:auto; }
+  .list-record-row{ display:flex; align-items:center; gap:8px; padding:10px 0; border-bottom:1px solid var(--border); }
   .filter-row select, .filter-row input{ flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); font-size:13px; }
 
   /* ---- Modal ---- */
@@ -212,6 +213,14 @@
   .color-swatches{ display:flex; gap:8px; flex-wrap:wrap; }
   .color-swatches .cs{ width:26px; height:26px; border-radius:50%; cursor:pointer; border:2px solid transparent; }
   .color-swatches .cs.sel{ border-color:var(--text); }
+
+  @media (min-width:900px){
+    #app{ max-width:none; }
+    #tabbar{ max-width:none; }
+    .row2{ grid-template-columns:repeat(3,1fr); }
+    .list-records{ display:grid; grid-template-columns:repeat(2,1fr); gap:0 24px; }
+    .shopping-headings{ display:grid; grid-template-columns:repeat(3,1fr); gap:12px; align-items:start; }
+  }
 </style>
 </head>
 <body>
@@ -1014,6 +1023,7 @@ function renderShopping(){
   const headings = state.shoppingHeadings;
   return `
     <h2 class="screen-title">買い物リスト</h2>
+    <div class="shopping-headings">
     ${headings.length ? headings.map(h=>{
       const items = state.shoppingItems.filter(i=>i.headingId===h.id)
         .sort((a,b)=> (a.done - b.done) || ((a.order||0)-(b.order||0)));
@@ -1039,6 +1049,7 @@ function renderShopping(){
         </div>
       </div>`;
     }).join('') : '<div class="no-data">見出しがありません。まずは「スーパー」「ユニクロ」のような見出しを追加してください</div>'}
+    </div>
     <button class="add-btn" id="addHeading">+ 見出しを追加</button>
   `;
 }
@@ -1102,8 +1113,9 @@ function renderList(){
       `).join('')}
       <button type="button" class="link-btn" id="fCategoryClear" style="margin-top:8px;">選択をクリア</button>
     </div>` : ''}
+    <div class="list-records">
     ${records.length ? records.map(r=>`
-      <div class="list-record-row" data-id="${r.id}" data-kind="${r.kind}" style="display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--border);">
+      <div class="list-record-row" data-id="${r.id}" data-kind="${r.kind}">
         <div style="flex:0 0 62px;font-size:11px;color:var(--text-sub);">${r.date.slice(5).replace('-','/')}</div>
         <div style="flex:1;min-width:0;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(r.label)}${r.memo?'・'+escapeHtml(r.memo):''}${r.kind==='advance'?(r.settled?'・精算済み':'・未精算'):''}</div>
         <div style="flex:0 0 auto;font-weight:600;font-size:13px;text-align:right;color:${r.type==='income'?'var(--success)':(r.type==='expense'?'var(--danger)':'var(--text)')};">${r.type==='income'?'+':'-'}${yen(r.amount)}</div>
@@ -1111,6 +1123,7 @@ function renderList(){
         <span class="icon-btn list-edit" data-id="${r.id}" data-kind="${r.kind}">✎</span>
         <span class="icon-btn list-del" data-id="${r.id}" data-kind="${r.kind}">✕</span>
       </div>`).join('') : '<div class="no-data">該当する記録がありません</div>'}
+    </div>
   `;
 }
 
