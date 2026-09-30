@@ -256,7 +256,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   getFirestore, collection, doc, setDoc, addDoc, deleteDoc, updateDoc,
-  onSnapshot, getDoc, query
+  onSnapshot, getDoc, query, deleteField
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 /* ====== Firebase 設定(ご提供いただいた設定値) ====== */
@@ -277,6 +277,7 @@ setPersistence(auth, browserLocalPersistence);
 const state = {
   uid: null,
   dataReady: false,
+  periodOverrides: {},
   screen: 'home',
   prevScreen: 'edit',
   transactions: [],
@@ -464,6 +465,7 @@ function listenAll(){
   }));
   unsubs.push(onSnapshot(doc(db,'users',state.uid,'meta','settings'), snap => {
     state.monthStartDay = snap.exists() ? (snap.data().monthStartDay||1) : 1;
+    state.periodOverrides = snap.exists() ? (snap.data().periodOverrides||{}) : {};
     markLoaded('settings'); render();
   }));
   unsubs.push(onSnapshot(collection(db,'users',state.uid,'goals'), snap => {
@@ -495,13 +497,27 @@ function render(){
 }
 
 /* ---------- ホーム ---------- */
+function periodKeyFor(year, month){ // month: 0-indexed, normalizes rollover
+  const d = new Date(year, month, 1);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+function resolvePeriodStart(year, month, day){
+  const key = periodKeyFor(year, month);
+  const override = state.periodOverrides && state.periodOverrides[key];
+  if(override){
+    const [oy,om,od] = override.split('-').map(Number);
+    return { date: new Date(oy, om-1, od), key, overridden:true };
+  }
+  const d = new Date(year, month, 1);
+  return { date: new Date(d.getFullYear(), d.getMonth(), day), key, overridden:false };
+}
 function getPeriodForDate(refDate){
   const s = Math.min(28, Math.max(1, state.monthStartDay||1));
-  let start;
-  if(refDate.getDate() >= s) start = new Date(refDate.getFullYear(), refDate.getMonth(), s);
-  else start = new Date(refDate.getFullYear(), refDate.getMonth()-1, s);
-  const end = new Date(start.getFullYear(), start.getMonth()+1, s);
-  return { start: toLocalStr(start), end: toLocalStr(end), startDate: start, endDate: end };
+  let baseYear = refDate.getFullYear(), baseMonth = refDate.getMonth();
+  if(refDate.getDate() < s) baseMonth -= 1;
+  const startInfo = resolvePeriodStart(baseYear, baseMonth, s);
+  const endInfo = resolvePeriodStart(baseYear, baseMonth+1, s);
+  return { start: toLocalStr(startInfo.date), end: toLocalStr(endInfo.date), startDate: startInfo.date, endDate: endInfo.date, key: startInfo.key, overridden: startInfo.overridden, defaultDay: s };
 }
 function getCurrentPeriod(){ return getPeriodForDate(new Date()); }
 function contribAmt(v){ return v==null ? 0 : (typeof v==='object' ? (v.amount||0) : v); }
@@ -586,7 +602,7 @@ function renderHome(){
         </div>`;
       }).join('')}
     </div>` : ''}
-    <div class="card-label" style="margin-bottom:-2px;">${(()=>{ const endInc=new Date(period.endDate); endInc.setDate(endInc.getDate()-1); return `${period.startDate.getMonth()+1}/${period.startDate.getDate()} 〜 ${endInc.getMonth()+1}/${endInc.getDate()}`; })()}</div>
+    <button type="button" id="periodLabelBtn" class="link-btn" style="margin-bottom:2px;font-size:12px;">${(()=>{ const endInc=new Date(period.endDate); endInc.setDate(endInc.getDate()-1); return `${period.startDate.getMonth()+1}/${period.startDate.getDate()} 〜 ${endInc.getMonth()+1}/${endInc.getDate()}`; })()}${period.overridden?'(開始日を個別設定中)':''} ✎</button>
     <div class="row2">
       <div class="card"><div class="card-label">今月の収入</div><div class="card-value" style="color:var(--success);text-align:right;">+${yen(monthIncome)}</div></div>
       <div class="card">
@@ -599,6 +615,7 @@ function renderHome(){
       <div class="card">
         <div class="card-label">使えるお金</div>
         <div class="card-value" style="color:${usableNow>=0?'var(--text)':'var(--danger)'};text-align:right;">${yen(usableNow)}</div>
+        <div style="font-size:11px;color:var(--text-sub);text-align:right;margin-top:2px;">次のリセットまであと${(()=>{ const t0=new Date(today.getFullYear(),today.getMonth(),today.getDate()); return Math.round((period.endDate-t0)/86400000); })()}日</div>
       </div>
     </div>
     <div style="font-size:11px;color:var(--text-sub);margin-top:-8px;margin-bottom:14px;">※使えるお金:今期の収入から、固定費・予算・貯蓄目標(それぞれの設定金額)をあらかじめ差し引いた金額。そこから、固定費にも予算のカテゴリにも当てはまらない支出をした分だけ、さらに減っていきます</div>
@@ -1122,6 +1139,8 @@ function attachScreenEvents(){
     if(advCard) advCard.onclick = ()=>{ state.screen='advances'; render(); };
     const transferBtn = document.getElementById('openTransferBtn');
     if(transferBtn) transferBtn.onclick = ()=> openTransferForm();
+    const periodLabelBtn = document.getElementById('periodLabelBtn');
+    if(periodLabelBtn) periodLabelBtn.onclick = ()=> openPeriodOverrideForm(getCurrentPeriod());
     document.querySelectorAll('.fixed-check').forEach(cb=>{
       cb.onchange = async ()=>{
         const f = state.fixedCosts.find(x=>x.id===cb.dataset.id);
@@ -1568,6 +1587,34 @@ function openPeriodForm(){
   document.getElementById('fSave').onclick = async ()=>{
     const v = parseInt(document.getElementById('periodInput').value)||1;
     await setDoc(doc(db,'users',state.uid,'meta','settings'), { monthStartDay: v }, {merge:true});
+    closeModal();
+  };
+}
+
+function openPeriodOverrideForm(period){
+  const box = document.getElementById('modalBox');
+  box.innerHTML = `
+    <div class="mh"><span>今期の開始日を個別に変更</span><button id="mClose">✕</button></div>
+    <div style="font-size:11px;color:var(--text-sub);margin-bottom:10px;">通常は毎月${period.defaultDay}日開始ですが、給料日が土日祝と重なった場合など、この期だけ開始日をずらしたいときに使います。</div>
+    <div class="form-field"><label>この期の開始日</label><input type="date" id="poDate" value="${period.start}"></div>
+    <div class="form-actions">
+      <button class="cancel" id="fCancel">キャンセル</button>
+      ${period.overridden?`<button class="delete" id="fReset">自動(毎月${period.defaultDay}日)に戻す</button>`:''}
+      <button class="save" id="fSave">保存</button>
+    </div>
+  `;
+  document.getElementById('modalOverlay').classList.add('show');
+  document.getElementById('mClose').onclick = closeModal;
+  document.getElementById('fCancel').onclick = closeModal;
+  const resetBtn = document.getElementById('fReset');
+  if(resetBtn) resetBtn.onclick = async ()=>{
+    await setDoc(doc(db,'users',state.uid,'meta','settings'), { periodOverrides: { [period.key]: deleteField() } }, {merge:true});
+    closeModal();
+  };
+  document.getElementById('fSave').onclick = async ()=>{
+    const v = document.getElementById('poDate').value;
+    if(!v) return;
+    await setDoc(doc(db,'users',state.uid,'meta','settings'), { periodOverrides: { [period.key]: v } }, {merge:true});
     closeModal();
   };
 }
