@@ -609,10 +609,7 @@ function renderHome(){
         </div>`;
       }).join('')}
     </div>` : ''}
-    <div style="display:flex;gap:12px;align-items:center;margin-bottom:2px;">
-      <button type="button" id="periodLabelBtn" class="link-btn" style="font-size:12px;">${(()=>{ const endInc=new Date(period.endDate); endInc.setDate(endInc.getDate()-1); return `${period.startDate.getMonth()+1}/${period.startDate.getDate()} 〜 ${endInc.getMonth()+1}/${endInc.getDate()}`; })()}${period.overridden?'(個別設定中)':''} ✎</button>
-      <button type="button" id="nextPeriodBtn" class="link-btn" style="font-size:12px;">来月の開始日を設定</button>
-    </div>
+    <div class="card-label" style="margin-bottom:2px;">${(()=>{ const endInc=new Date(period.endDate); endInc.setDate(endInc.getDate()-1); return `${period.startDate.getMonth()+1}/${period.startDate.getDate()} 〜 ${endInc.getMonth()+1}/${endInc.getDate()}`; })()}${period.overridden?'(個別設定中)':''}</div>
     <div class="row2">
       <div class="card"><div class="card-label">今月の収入</div><div class="card-value" style="color:var(--success);text-align:right;">+${yen(monthIncome)}</div></div>
       <div class="card">
@@ -925,7 +922,7 @@ function renderEdit(){
         <span>${escapeHtml(g.name)}・累計${yen(goalCumulative(g))} / 目標${yen(g.targetAmount)}${g.monthlyTarget>0?`(毎月${yen(g.monthlyTarget)})`:''}</span><span class="icon-btn">✎</span>
       </div>`).join('')}
     <button class="add-btn" id="addGoal">+ 目標を追加</button>
-    <div class="list-row" id="periodRow" style="cursor:pointer;margin-top:14px;"><span>「今月」の起算日</span><span style="color:var(--text-sub);">毎月${state.monthStartDay||1}日 ›</span></div>
+    <div class="list-row" id="periodRow" style="cursor:pointer;margin-top:14px;"><span>起算日</span><span style="color:var(--text-sub);">毎月${state.monthStartDay||1}日 ›</span></div>
 
     <div class="section-label">予算設定</div>
     ${state.budgets.map(b=>{
@@ -1149,10 +1146,6 @@ function attachScreenEvents(){
     if(advCard) advCard.onclick = ()=>{ state.screen='advances'; render(); };
     const transferBtn = document.getElementById('openTransferBtn');
     if(transferBtn) transferBtn.onclick = ()=> openTransferForm();
-    const periodLabelBtn = document.getElementById('periodLabelBtn');
-    if(periodLabelBtn) periodLabelBtn.onclick = ()=> openPeriodOverrideForm(getCurrentPeriod());
-    const nextPeriodBtn = document.getElementById('nextPeriodBtn');
-    if(nextPeriodBtn) nextPeriodBtn.onclick = ()=> openPeriodOverrideForm(getNextPeriodInfo(getCurrentPeriod()));
     document.querySelectorAll('.fixed-check').forEach(cb=>{
       cb.onchange = async ()=>{
         const f = state.fixedCosts.find(x=>x.id===cb.dataset.id);
@@ -1584,13 +1577,18 @@ function openGoalPastContribForm(goal){
 }
 
 function openPeriodForm(){
+  const curPeriod = getCurrentPeriod();
+  const nextPeriod = getNextPeriodInfo(curPeriod);
   const box = document.getElementById('modalBox');
   box.innerHTML = `
-    <div class="mh"><span>「今月」の起算日</span><button id="mClose">✕</button></div>
-    <div class="form-field"><label>毎月何日を起点にするか(給料日など)</label>
+    <div class="mh"><span>起算日の設定</span><button id="mClose">✕</button></div>
+    <div class="form-field"><label>毎月の基本の起算日(給料日など)</label>
       <select id="periodInput">${Array.from({length:28},(_,i)=>i+1).map(d=>`<option value="${d}" ${state.monthStartDay===d?'selected':''}>${d}日</option>`).join('')}</select>
     </div>
-    <div style="font-size:11px;color:var(--text-sub);margin-bottom:4px;">例:25日を選ぶと「今月」は毎月25日〜翌月24日として集計されます</div>
+    <div style="font-size:11px;color:var(--text-sub);margin-bottom:10px;">例:25日を選ぶと「今月」は毎月25日〜翌月24日として集計されます</div>
+    <div class="form-field"><label>今月の開始日</label><input type="date" id="curStartInput" value="${curPeriod.start}"></div>
+    <div class="form-field"><label>来月の開始日</label><input type="date" id="nextStartInput" value="${nextPeriod.start}"></div>
+    <div style="font-size:11px;color:var(--text-sub);margin-bottom:4px;">給料日が土日祝と重なるなど、特定の月だけ開始日をずらしたいときに使います。基本の起算日と同じ日のままなら、自動でその日が使われます。</div>
     <div class="form-actions"><button class="cancel" id="fCancel">キャンセル</button><button class="save" id="fSave">保存</button></div>
   `;
   document.getElementById('modalOverlay').classList.add('show');
@@ -1598,35 +1596,14 @@ function openPeriodForm(){
   document.getElementById('fCancel').onclick = closeModal;
   document.getElementById('fSave').onclick = async ()=>{
     const v = parseInt(document.getElementById('periodInput').value)||1;
-    await setDoc(doc(db,'users',state.uid,'meta','settings'), { monthStartDay: v }, {merge:true});
-    closeModal();
-  };
-}
-
-function openPeriodOverrideForm(period){
-  const box = document.getElementById('modalBox');
-  box.innerHTML = `
-    <div class="mh"><span>${period.key.split('-')[0]}年${parseInt(period.key.split('-')[1])}月の開始日を設定</span><button id="mClose">✕</button></div>
-    <div style="font-size:11px;color:var(--text-sub);margin-bottom:10px;">通常は毎月${period.defaultDay}日開始ですが、給料日が土日祝と重なった場合など、この月だけ開始日をずらしたいときに使います。</div>
-    <div class="form-field"><label>開始日</label><input type="date" id="poDate" value="${period.start}"></div>
-    <div class="form-actions">
-      <button class="cancel" id="fCancel">キャンセル</button>
-      ${period.overridden?`<button class="delete" id="fReset">自動(毎月${period.defaultDay}日)に戻す</button>`:''}
-      <button class="save" id="fSave">保存</button>
-    </div>
-  `;
-  document.getElementById('modalOverlay').classList.add('show');
-  document.getElementById('mClose').onclick = closeModal;
-  document.getElementById('fCancel').onclick = closeModal;
-  const resetBtn = document.getElementById('fReset');
-  if(resetBtn) resetBtn.onclick = async ()=>{
-    await setDoc(doc(db,'users',state.uid,'meta','settings'), { periodOverrides: { [period.key]: deleteField() } }, {merge:true});
-    closeModal();
-  };
-  document.getElementById('fSave').onclick = async ()=>{
-    const v = document.getElementById('poDate').value;
-    if(!v) return;
-    await setDoc(doc(db,'users',state.uid,'meta','settings'), { periodOverrides: { [period.key]: v } }, {merge:true});
+    const curStart = document.getElementById('curStartInput').value;
+    const nextStart = document.getElementById('nextStartInput').value;
+    const curDefault = (()=>{ const [y,m]=curPeriod.key.split('-').map(Number); return toLocalStr(new Date(y, m-1, curPeriod.defaultDay)); })();
+    const nextDefault = (()=>{ const [y,m]=nextPeriod.key.split('-').map(Number); return toLocalStr(new Date(y, m-1, nextPeriod.defaultDay)); })();
+    const overrides = {};
+    overrides[curPeriod.key] = (curStart && curStart!==curDefault) ? curStart : deleteField();
+    overrides[nextPeriod.key] = (nextStart && nextStart!==nextDefault) ? nextStart : deleteField();
+    await setDoc(doc(db,'users',state.uid,'meta','settings'), { monthStartDay: v, periodOverrides: overrides }, {merge:true});
     closeModal();
   };
 }
