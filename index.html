@@ -543,6 +543,10 @@ function accountBalance(accountId){
 function accountOptionsHtml(selectedId, includeEmpty){
   return (includeEmpty?`<option value="">未設定</option>`:'') + state.accounts.map(a=>`<option value="${a.id}" ${selectedId===a.id?'selected':''}>${escapeHtml(a.name)}</option>`).join('');
 }
+function accountNameOrUnset(accountId){
+  const a = state.accounts.find(x=>x.id===accountId);
+  return a ? a.name : '未設定';
+}
 function renderHome(){
   const period = getCurrentPeriod();
   const thisMonth = state.transactions.filter(t=> t.date>=period.start && t.date<period.end);
@@ -653,7 +657,7 @@ function renderHome(){
             <div class="fixed-day ${f.day===today.getDate()?'due-today':''}"><span class="num">${f.day}</span><span class="unit">日</span></div>
             <div class="fixed-info">
               <div class="name">${escapeHtml(f.name)}</div>
-              <span class="tag">${escapeHtml(f.method||'未設定')}</span>
+              <span class="tag">${escapeHtml(accountNameOrUnset(f.accountId))}</span>
             </div>
             <div class="fixed-amount">${yen(f.amount)}</div>
           </div>
@@ -937,7 +941,7 @@ function renderEdit(){
     <div class="section-label">固定費登録</div>
     ${state.fixedCosts.map(f=>`
       <div class="list-row fixed-edit-row" data-id="${f.id}" style="cursor:pointer;">
-        <span>${escapeHtml(f.name)}・毎月${f.day}日・${yen(f.amount)}・${escapeHtml(f.method||'未設定')}</span><span class="icon-btn">✎</span>
+        <span>${escapeHtml(f.name)}・毎月${f.day}日・${yen(f.amount)}・${escapeHtml(accountNameOrUnset(f.accountId))}</span><span class="icon-btn">✎</span>
       </div>`).join('')}
     <button class="add-btn" id="addFixed">+ 固定費を追加</button>
 
@@ -1652,8 +1656,7 @@ function openFixedForm(existing){
     <div class="form-field"><label>名称</label><input type="text" id="fName" value="${existing?escapeHtml(existing.name):''}"></div>
     <div class="form-field"><label>金額(円)</label><input type="text" id="fAmt" class="amt-input" value="${existing?existing.amount.toLocaleString('ja-JP'):''}" inputmode="numeric"></div>
     <div class="form-field"><label>支払日(毎月何日)</label><select id="fDay">${Array.from({length:31},(_,i)=>i+1).map(d=>`<option value="${d}" ${existing&&existing.day===d?'selected':''}>${d}日</option>`).join('')}</select></div>
-    <div class="form-field"><label>支払い方法</label><input type="text" id="fMethod" placeholder="例:引き落とし、カード払い" value="${existing?escapeHtml(existing.method||''):''}"></div>
-    <div class="form-field"><label>引き落とし口座(任意)</label><select id="fAccount">${accountOptionsHtml(existing?existing.accountId:'', true)}</select></div>
+    <div class="form-field"><label>支払い方法(口座)</label><select id="fAccount">${accountOptionsHtml(existing?existing.accountId:'', true)}</select></div>
     <div class="form-actions">
       <button class="cancel" id="fCancel">キャンセル</button>
       ${existing?'<button class="delete" id="fDelete">削除</button>':''}
@@ -1671,7 +1674,6 @@ function openFixedForm(existing){
       name: document.getElementById('fName').value.trim(),
       amount: parseAmt(document.getElementById('fAmt').value),
       day: parseInt(document.getElementById('fDay').value)||1,
-      method: document.getElementById('fMethod').value.trim(),
       accountId: document.getElementById('fAccount').value,
     };
     if(!data.name){ return; }
