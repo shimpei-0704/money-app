@@ -1677,16 +1677,8 @@ function openFixedForm(existing){
       accountId: document.getElementById('fAccount').value,
     };
     if(!data.name){ return; }
-    if(existing){
-      await updateDoc(doc(db,'users',state.uid,'fixedCosts',existing.id), data);
-      const period = getCurrentPeriod();
-      const t = findFixedCostTransaction(existing, period);
-      if(t){
-        await updateDoc(doc(db,'users',state.uid,'transactions',t.id), { amount:data.amount, memo:data.name, accountId:data.accountId, fixedCostId:existing.id });
-      }
-    } else {
-      await addDoc(collection(db,'users',state.uid,'fixedCosts'), data);
-    }
+    if(existing) await updateDoc(doc(db,'users',state.uid,'fixedCosts',existing.id), data);
+    else await addDoc(collection(db,'users',state.uid,'fixedCosts'), data);
     closeModal();
   };
 }
