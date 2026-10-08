@@ -538,8 +538,11 @@ function accountBalance(accountId){
   const txSum = state.transactions.filter(t=>t.accountId===accountId).reduce((s,t)=> s + (t.type==='income'?t.amount:-t.amount), 0);
   const transferIn = state.transfers.filter(tr=>tr.toAccountId===accountId).reduce((s,tr)=>s+tr.amount,0);
   const transferOut = state.transfers.filter(tr=>tr.fromAccountId===accountId).reduce((s,tr)=>s+tr.amount,0);
-  return init + txSum + transferIn - transferOut;
+  const advOut = state.advances.filter(a=>a.accountId===accountId).reduce((s,a)=>s+a.amount,0);
+  const advBack = state.advances.filter(a=>a.settled && advReturnAccount(a)===accountId).reduce((s,a)=>s+a.amount,0);
+  return init + txSum + transferIn - transferOut - advOut + advBack;
 }
+function advReturnAccount(a){ return a.settleAccountId || a.accountId || ''; }
 function accountOptionsHtml(selectedId, includeEmpty){
   return (includeEmpty?`<option value="">未設定</option>`:'') + state.accounts.map(a=>`<option value="${a.id}" ${selectedId===a.id?'selected':''}>${escapeHtml(a.name)}</option>`).join('');
 }
@@ -575,9 +578,11 @@ function renderHome(){
   const fixedCatExpense = thisMonth.filter(t=> t.type==='expense' && t.category===fixedCatId).reduce((s,t)=>s+t.amount,0);
   const spentBudgetTotal = budgetRows.reduce((s,r)=>s+r.spent,0);
   const extraExpense = monthExpense - fixedCatExpense - spentBudgetTotal;
-  const usableNow = monthIncome - fixedCostsTotal - budgetTotal - reservedSavings - extraExpense;
-  const carryover = allBalance + monthExpense - fixedCostsTotal - budgetTotal - reservedSavings - extraExpense;
   const unsettledAdv = state.advances.filter(a=>!a.settled);
+  const advOutAll = unsettledAdv.filter(a=>a.accountId).reduce((s,a)=>s+a.amount,0);
+  const advOutPeriod = unsettledAdv.filter(a=>a.accountId && a.date>=period.start && a.date<period.end).reduce((s,a)=>s+a.amount,0);
+  const usableNow = monthIncome - fixedCostsTotal - budgetTotal - reservedSavings - extraExpense - advOutPeriod;
+  const carryover = allBalance + monthExpense - fixedCostsTotal - budgetTotal - reservedSavings - extraExpense;
   const advTotal = unsettledAdv.reduce((s,a)=>s+a.amount,0);
 
   return `
@@ -588,7 +593,7 @@ function renderHome(){
         <button class="link-btn" id="openTransferBtn">振替する</button>
       </div>
       <div class="card-value" style="text-align:right;">${yen(Math.max(0,allBalance))}</div>
-      <div style="font-size:11px;color:var(--text-sub);margin-top:4px;text-align:right;">繰越:${yen(carryover)}</div>
+      <div style="font-size:11px;color:var(--text-sub);margin-top:4px;text-align:right;">繰越:${yen(carryover)}${advOutAll>0?` <span style="color:#E8A33D;">(立替${yen(advOutAll)}</span>・合計${yen(carryover+advOutAll)})`:''}</div>
       ${accountBalances.length ? `
       <div class="account-grid">
         ${accountBalances.map((a,i)=>`
@@ -627,6 +632,7 @@ function renderHome(){
       <div class="card">
         <div class="card-label">使えるお金</div>
         <div class="card-value" style="color:${usableNow>=0?'var(--text)':'var(--danger)'};text-align:right;">${yen(usableNow)}</div>
+        ${advOutPeriod>0?`<div style="font-size:11px;color:var(--text-sub);text-align:right;margin-top:2px;"><span style="color:#E8A33D;">(立替${yen(advOutPeriod)}</span>・合計${yen(usableNow+advOutPeriod)})</div>`:''}
         <div style="font-size:11px;color:var(--text-sub);text-align:right;margin-top:2px;">次のリセットまであと${(()=>{ const t0=new Date(today.getFullYear(),today.getMonth(),today.getDate()); return Math.round((period.endDate-t0)/86400000); })()}日</div>
       </div>
     </div>
@@ -753,7 +759,7 @@ function renderInput(){
     </div>
     `}
     <div class="field"><label>金額</label><input type="text" id="inAmt" class="amt-input" placeholder="0" inputmode="numeric"></div>
-    <div class="field"><label>口座${inputType==='advance'?'(任意)':''}</label><select id="inAccount">${accountOptionsHtml('', true)}</select></div>
+    <div class="field"><label>口座</label><select id="inAccount">${accountOptionsHtml('', true)}</select></div>
     <div class="field"><label>日付</label><input type="date" id="inDate" value="${todayStr()}"></div>
     <div class="field"><label>メモ</label><input type="text" id="inMemo" placeholder="任意"></div>
     <div id="inMsg" style="color:var(--danger);font-size:13px;min-height:16px;"></div>
@@ -1405,6 +1411,7 @@ async function saveTransaction(keepGoing){
         await addDoc(collection(db,'users',state.uid,'advanceContacts'), { name: person });
       }
     }
+    if(!accountId){ msg.textContent = '口座を選択してください'; return; }
     await addDoc(collection(db,'users',state.uid,'advances'), { person, amount:amt, date, memo, accountId, settled:false, receiptImg:null, createdAt:Date.now() });
   }else{
     const cat = document.getElementById('inCat').value;
@@ -1917,13 +1924,14 @@ function openAdvanceForm(existing){
     </div>
     <div class="form-field" id="aPersonNewWrap" style="display:none;"><label>相手の名前</label><input type="text" id="aPersonNew" value="${existing&&!state.advanceContacts.some(c=>c.name===existing.person)?escapeHtml(existing.person):''}"></div>
     <div class="form-field"><label>金額(円)</label><input type="text" id="aAmt" class="amt-input" value="${existing?existing.amount.toLocaleString('ja-JP'):''}" inputmode="numeric"></div>
-    <div class="form-field"><label>支払った口座(任意)</label><select id="aAccount">${accountOptionsHtml(existing?existing.accountId:'', true)}</select></div>
+    <div class="form-field"><label>支払った口座</label><select id="aAccount">${accountOptionsHtml(existing?existing.accountId:'', true)}</select></div>
     <div class="form-field"><label>日付</label><input type="date" id="aDate" value="${existing?existing.date:todayStr()}"></div>
     <div class="form-field"><label>メモ</label><input type="text" id="aMemo" value="${existing?escapeHtml(existing.memo||''):''}"></div>
     <div class="form-field"><label>レシート写真(任意)</label><input type="file" accept="image/*" id="aReceipt">
       <div id="aReceiptPreview" style="margin-top:8px;">${receiptData?`<img src="${receiptData}" style="max-width:100px;border-radius:8px;">`:''}</div>
     </div>
     <div class="form-field"><label><input type="checkbox" id="aSettled" ${existing&&existing.settled?'checked':''} style="width:auto;margin-right:6px;">精算済みにする</label></div>
+    <div class="form-field" id="aSettleWrap" style="display:none;"><label>戻す先の口座</label><select id="aSettleAccount">${accountOptionsHtml(existing?(existing.settleAccountId||existing.accountId||''):'', false)}</select></div>
     <div id="aErr" style="color:var(--danger);font-size:12px;min-height:16px;"></div>
     <div class="form-actions">
       <button class="cancel" id="fCancel">キャンセル</button>
@@ -1934,6 +1942,13 @@ function openAdvanceForm(existing){
   document.getElementById('modalOverlay').classList.add('show');
   document.getElementById('mClose').onclick = closeModal;
   document.getElementById('fCancel').onclick = closeModal;
+  const settledCb = document.getElementById('aSettled');
+  const settleWrap = document.getElementById('aSettleWrap');
+  const settleSel = document.getElementById('aSettleAccount');
+  const accSel = document.getElementById('aAccount');
+  const syncSettle = ()=>{ settleWrap.style.display = settledCb.checked ? 'block' : 'none'; };
+  settledCb.onchange = ()=>{ if(settledCb.checked && !(existing&&existing.settleAccountId)) settleSel.value = accSel.value; syncSettle(); };
+  syncSettle();
   const personSel = document.getElementById('aPersonSel');
   const personNewWrap = document.getElementById('aPersonNewWrap');
   personNewWrap.style.display = personSel.value==='__new__' ? 'block' : 'none';
@@ -1966,10 +1981,12 @@ function openAdvanceForm(existing){
       memo: document.getElementById('aMemo').value.trim(),
       accountId: document.getElementById('aAccount').value,
       settled: document.getElementById('aSettled').checked,
+      settleAccountId: document.getElementById('aSettled').checked ? document.getElementById('aSettleAccount').value : '',
       receiptImg: receiptData || null
     };
     if(data.amount<=0){ errEl.textContent = '金額を正しく入力してください'; return; }
     if(!data.date){ errEl.textContent = '日付を選択してください'; return; }
+    if(!data.accountId){ errEl.textContent = '口座を選択してください'; return; }
     if(existing) await updateDoc(doc(db,'users',state.uid,'advances',existing.id), data);
     else await addDoc(collection(db,'users',state.uid,'advances'), {...data, createdAt:Date.now()});
     closeModal();
