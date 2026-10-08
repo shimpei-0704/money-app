@@ -593,7 +593,7 @@ function renderHome(){
         <button class="link-btn" id="openTransferBtn">振替する</button>
       </div>
       <div class="card-value" style="text-align:right;">${yen(Math.max(0,allBalance))}</div>
-      <div style="font-size:11px;color:var(--text-sub);margin-top:4px;text-align:right;">繰越:${yen(carryover)}${advOutAll>0?` <span style="color:#E8A33D;">(立替${yen(advOutAll)}</span>・合計${yen(carryover+advOutAll)})`:''}</div>
+      <div style="font-size:11px;color:var(--text-sub);margin-top:4px;text-align:right;">繰越:${yen(carryover)}${advOutAll>0?`<br><span style="color:#E8A33D;">(立替${yen(advOutAll)})</span><br>合計${yen(carryover+advOutAll)}`:''}</div>
       ${accountBalances.length ? `
       <div class="account-grid">
         ${accountBalances.map((a,i)=>`
@@ -632,7 +632,7 @@ function renderHome(){
       <div class="card">
         <div class="card-label">使えるお金</div>
         <div class="card-value" style="color:${usableNow>=0?'var(--text)':'var(--danger)'};text-align:right;">${yen(usableNow)}</div>
-        ${advOutPeriod>0?`<div style="font-size:11px;color:var(--text-sub);text-align:right;margin-top:2px;"><span style="color:#E8A33D;">(立替${yen(advOutPeriod)}</span>・合計${yen(usableNow+advOutPeriod)})</div>`:''}
+        ${advOutPeriod>0?`<div style="font-size:11px;color:var(--text-sub);text-align:right;margin-top:2px;"><span style="color:#E8A33D;">(立替${yen(advOutPeriod)})</span><br>合計${yen(usableNow+advOutPeriod)}</div>`:''}
         <div style="font-size:11px;color:var(--text-sub);text-align:right;margin-top:2px;">次のリセットまであと${(()=>{ const t0=new Date(today.getFullYear(),today.getMonth(),today.getDate()); return Math.round((period.endDate-t0)/86400000); })()}日</div>
       </div>
     </div>
