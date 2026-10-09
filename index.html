@@ -626,10 +626,9 @@ function renderHome(){
     <div class="card">
       <div class="card-label">使えるお金</div>
       <div class="card-value" style="color:${usableNow>=0?'var(--text)':'var(--danger)'};text-align:right;">${yen(usableNow)}</div>
-      <div style="display:flex;flex-wrap:wrap;justify-content:flex-end;text-align:right;gap:6px 28px;margin-top:10px;">
-        ${advOutPeriod>0?`<div><div style="font-size:11px;color:var(--text-sub);">立替</div><div style="font-size:15px;font-weight:600;">${yen(advOutPeriod)}</div></div>
-        <div><div style="font-size:11px;color:var(--text-sub);">合計</div><div style="font-size:15px;font-weight:600;color:#E8A33D;">${yen(usableNow+advOutPeriod)}</div></div>`:''}
-        <div><div style="font-size:11px;color:var(--text-sub);">次のリセットまで</div><div style="font-size:15px;font-weight:600;color:var(--success);">あと${(()=>{ const t0=new Date(today.getFullYear(),today.getMonth(),today.getDate()); return Math.round((period.endDate-t0)/86400000); })()}日</div></div>
+      <div style="display:flex;flex-wrap:wrap;justify-content:flex-end;gap:4px 16px;margin-top:8px;font-size:11px;color:var(--text-sub);">
+        ${advOutPeriod>0?`<span>立替 ${yen(advOutPeriod)}</span><span style="color:#E8A33D;">合計 ${yen(usableNow+advOutPeriod)}</span>`:''}
+        <span style="color:var(--success);">次のリセットまで あと${(()=>{ const t0=new Date(today.getFullYear(),today.getMonth(),today.getDate()); return Math.round((period.endDate-t0)/86400000); })()}日</span>
       </div>
     </div>
     <div class="row3">
