@@ -593,7 +593,7 @@ function renderHome(){
         <button class="link-btn" id="openTransferBtn">振替する</button>
       </div>
       <div class="card-value" style="text-align:right;">${yen(Math.max(0,allBalance))}</div>
-      <div style="font-size:11px;color:var(--text-sub);margin-top:4px;text-align:right;">繰越:${yen(carryover)}${advOutAll>0?`<br><span style="color:#E8A33D;">(立替${yen(advOutAll)})</span><br>合計${yen(carryover+advOutAll)}`:''}</div>
+      <div style="font-size:11px;color:var(--text-sub);margin-top:4px;display:flex;justify-content:flex-end;flex-wrap:wrap;gap:4px 16px;"><span>繰越:${yen(carryover)}</span>${advOutAll>0?`<span>立替:${yen(advOutAll)}</span><span style="color:#E8A33D;">合計:${yen(carryover+advOutAll)}</span>`:''}</div>
       ${accountBalances.length ? `
       <div class="account-grid">
         ${accountBalances.map((a,i)=>`
@@ -620,6 +620,15 @@ function renderHome(){
       }).join('')}
     </div>` : ''}
     <div class="card-label" style="margin-bottom:2px;">${(()=>{ const endInc=new Date(period.endDate); endInc.setDate(endInc.getDate()-1); return `${period.startDate.getMonth()+1}/${period.startDate.getDate()} 〜 ${endInc.getMonth()+1}/${endInc.getDate()}`; })()}${period.overridden?'(個別設定中)':''}</div>
+    <div class="card">
+      <div class="card-label">使えるお金</div>
+      <div class="card-value" style="color:${usableNow>=0?'var(--text)':'var(--danger)'};">${yen(usableNow)}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px 28px;margin-top:10px;">
+        ${advOutPeriod>0?`<div><div style="font-size:11px;color:var(--text-sub);">立替</div><div style="font-size:15px;font-weight:600;">${yen(advOutPeriod)}</div></div>
+        <div><div style="font-size:11px;color:var(--text-sub);">合計</div><div style="font-size:15px;font-weight:600;color:#E8A33D;">${yen(usableNow+advOutPeriod)}</div></div>`:''}
+        <div><div style="font-size:11px;color:var(--text-sub);">次のリセットまで</div><div style="font-size:15px;font-weight:600;color:var(--success);">あと${(()=>{ const t0=new Date(today.getFullYear(),today.getMonth(),today.getDate()); return Math.round((period.endDate-t0)/86400000); })()}日</div></div>
+      </div>
+    </div>
     <div class="row2">
       <div class="card"><div class="card-label">今月の収入</div><div class="card-value" style="color:var(--success);text-align:right;">+${yen(monthIncome)}</div></div>
       <div class="card">
@@ -627,14 +636,9 @@ function renderHome(){
         <div class="card-value" style="color:var(--danger);text-align:right;">-${yen(monthExpense)}</div>
       </div>
     </div>
-    <div class="row2">
-      <div class="card"><div class="card-label">今月の収支</div><div class="card-value" style="color:${monthBalance>=0?'var(--success)':'var(--danger)'};text-align:right;">${monthBalance>=0?'+':''}${yen(monthBalance)}</div></div>
-      <div class="card">
-        <div class="card-label">使えるお金</div>
-        <div class="card-value" style="color:${usableNow>=0?'var(--text)':'var(--danger)'};text-align:right;">${yen(usableNow)}</div>
-        ${advOutPeriod>0?`<div style="font-size:11px;color:var(--text-sub);text-align:right;margin-top:2px;"><span style="color:#E8A33D;">(立替${yen(advOutPeriod)})</span><br>合計${yen(usableNow+advOutPeriod)}</div>`:''}
-        <div style="font-size:11px;color:var(--text-sub);text-align:right;margin-top:2px;">次のリセットまであと${(()=>{ const t0=new Date(today.getFullYear(),today.getMonth(),today.getDate()); return Math.round((period.endDate-t0)/86400000); })()}日</div>
-      </div>
+    <div class="card" style="display:flex;justify-content:space-between;align-items:baseline;">
+      <div class="card-label" style="margin-bottom:0;">今月の収支</div>
+      <div class="card-value" style="color:${monthBalance>=0?'var(--success)':'var(--danger)'};">${monthBalance>=0?'+':''}${yen(monthBalance)}</div>
     </div>
     <div style="font-size:11px;color:var(--text-sub);margin-top:-8px;margin-bottom:14px;">※使えるお金:今期の収入から、固定費・予算・貯蓄目標(それぞれの設定金額)をあらかじめ差し引いた金額。そこから、固定費にも予算のカテゴリにも当てはまらない支出をした分だけ、さらに減っていきます</div>
     ${budgetRows.length ? `
