@@ -506,7 +506,7 @@ function render(){
   }
   if(state.screen==='home') area.innerHTML = renderHome();
   if(state.screen==='input') area.innerHTML = renderInput();
-  if(state.screen==='summary') renderHome(); area.innerHTML = renderCalendar() + renderAnalysis() + renderSummary() + renderList();
+  if(state.screen==='summary'){ renderHome(); area.innerHTML = renderCalendar() + renderAnalysis() + renderSummary() + renderList(); }
   if(state.screen==='edit') area.innerHTML = renderEdit();
   if(state.screen==='advances') area.innerHTML = renderAdvances();
   if(state.screen==='shopping') area.innerHTML = renderShopping();
