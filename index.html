@@ -140,6 +140,7 @@
   /* ---- Summary ---- */
   #rangeBtn{ width:100%; text-align:left; padding:11px 14px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; cursor:pointer; font-size:13px; color:var(--text); }
   #rangeCalWrap{ display:none; margin-bottom:14px; }
+  .cal-header #rangeBtn{ width:auto; flex:1; margin:0 6px; justify-content:center; gap:8px; font-size:14px; font-weight:700; padding:9px 10px; }
   .cat-bars{ margin-bottom:18px; }
   .cat-bar-row{ margin-bottom:10px; }
   .cat-bar-head{ display:flex; justify-content:space-between; align-items:baseline; font-size:13px; margin-bottom:4px; gap:8px; }
@@ -308,6 +309,7 @@ const state = {
   calFilter: { category: 'all' },
   sumRange: null,
   sumRangeManual: false,
+  sumOffset: 0,
   trendGranularity: 'day',
   trendRange: null,
   trendRangeManual: false,
@@ -691,49 +693,71 @@ function renderHome(){
 }
 
 /* ---------- カレンダー ---------- */
+function parseDateStr(str){ const [y,m,d] = str.split('-').map(Number); return new Date(y,m-1,d); }
+function shiftDateStr(str, n){ const [y,m,d] = str.split('-').map(Number); return toLocalStr(new Date(y,m-1,d+n)); }
+function periodByOffset(k){
+  const cur = getCurrentPeriod();
+  const sd = cur.defaultDay;
+  const [ky,km] = cur.key.split('-').map(Number);
+  const st = resolvePeriodStart(ky, km-1+k, sd);
+  const en = resolvePeriodStart(ky, km+k, sd);
+  const endInc = new Date(en.date); endInc.setDate(endInc.getDate()-1);
+  return { start: toLocalStr(st.date), end: toLocalStr(endInc) };
+}
+function ensureSumRange(){
+  if(!state.sumRangeManual){
+    state.sumRange = periodByOffset(state.sumOffset||0);
+  }
+}
 function renderCalendar(){
-  const y = state.calMonth.getFullYear(), m = state.calMonth.getMonth();
-  const first = new Date(y,m,1);
-  const startDow = (first.getDay()+6)%7;
-  const daysInMonth = new Date(y,m+1,0).getDate();
+  ensureSumRange();
+  const {start,end} = state.sumRange;
+  const startD = parseDateStr(start), endD = parseDateStr(end);
+  const startDow = (startD.getDay()+6)%7;
 
   const catOptions = ['<option value="all">すべてのカテゴリ</option>']
-    .concat(state.categories.map(c=>`<option value="${c.id}">${escapeHtml(c.name)}</option>`)).join('');
+    .concat(state.categories.map(c=>`<option value="${c.id}" ${state.calFilter.category===c.id?'selected':''}>${escapeHtml(c.name)}</option>`)).join('');
 
   const dayTotals = {}, dayIncome = {};
   state.transactions.forEach(t=>{
     if(state.calFilter.category!=='all' && t.category!==state.calFilter.category) return;
-    const [ty,tm,td] = t.date.split('-').map(Number);
-    if(ty!==y || (tm-1)!==m) return;
-    if(t.type==='expense') dayTotals[td] = (dayTotals[td]||0) + t.amount;
-    else dayIncome[td] = (dayIncome[td]||0) + t.amount;
+    if(t.date<start || t.date>end) return;
+    if(t.type==='expense') dayTotals[t.date] = (dayTotals[t.date]||0) + t.amount;
+    else dayIncome[t.date] = (dayIncome[t.date]||0) + t.amount;
   });
 
   let cells = '';
   for(let i=0;i<startDow;i++) cells += `<div class="cal-cell empty"></div>`;
-  for(let day=1; day<=daysInMonth; day++){
-    const amt = dayTotals[day]||0;
-    const inc = dayIncome[day]||0;
+  let n = 0;
+  for(let d=new Date(startD); d<=endD && n<400; d.setDate(d.getDate()+1), n++){
+    const dateStr = toLocalStr(d);
+    const amt = dayTotals[dateStr]||0;
+    const inc = dayIncome[dateStr]||0;
     let bg = 'transparent';
     if(amt>=10000) bg = 'var(--danger-strong)';
     else if(amt>0) bg = 'var(--danger-bg)';
-    cells += `<div class="cal-cell" data-day="${day}" style="background:${bg}">
-      <div>${day}</div>
+    const dayLabel = (d.getDate()===1 || n===0) ? `${d.getMonth()+1}/${d.getDate()}` : `${d.getDate()}`;
+    cells += `<div class="cal-cell cal-day" data-date="${dateStr}" style="background:${bg}">
+      <div>${dayLabel}</div>
       ${amt>0?`<span class="amt">${amt>=10000?'-'+Math.round(amt/1000)+'k':'-'+amt.toLocaleString()}</span>`:''}
       ${inc>0?`<span class="amt" style="color:var(--success)">+${inc>=10000?Math.round(inc/1000)+'k':inc.toLocaleString()}</span>`:''}
     </div>`;
   }
+  const isDefault = !state.sumRangeManual && (state.sumOffset||0)===0;
 
   return `
     <h2 class="screen-title">カレンダー</h2>
     <div class="filter-row">
       <select id="calCatFilter">${catOptions}</select>
     </div>
+    <div class="card-label">集計期間</div>
     <div class="cal-header">
       <button id="calPrev">‹</button>
-      <span class="ym">${y}年${m+1}月</span>
+      <button id="rangeBtn"><span>${start.replace(/-/g,'/')} 〜 ${end.replace(/-/g,'/')}</span><span>📅</span></button>
       <button id="calNext">›</button>
     </div>
+    ${isDefault ? '' : '<div style="text-align:center;margin:-4px 0 10px;"><button class="link-btn" id="calReset">今期(起算日の期間)に戻す</button></div>'}
+    <div id="rangeCalWrap">${renderRangeCalendar()}</div>
     <div class="cal-grid">
       ${['月','火','水','木','金','土','日'].map(d=>`<div class="cal-dow">${d}</div>`).join('')}
       ${cells}
@@ -779,11 +803,7 @@ function renderInput(){
 
 /* ---------- 集計 ---------- */
 function renderSummary(){
-  if(!state.sumRangeManual){
-    const period = getCurrentPeriod();
-    const endInclusive = new Date(period.endDate); endInclusive.setDate(endInclusive.getDate()-1);
-    state.sumRange = { start: period.start, end: toLocalStr(endInclusive) };
-  }
+  ensureSumRange();
   const {start,end} = state.sumRange;
   const inRange = t => t.date>=start && t.date<=end;
   const expenses = state.transactions.filter(t=>t.type==='expense' && inRange(t));
@@ -844,35 +864,61 @@ function renderSummary(){
     buckets = trendDays.map(day=>{
       const [,mo,da] = day.split('-');
       const dow = new Date(day+'T00:00:00').getDay();
-      return { label: `${parseInt(mo)}/${parseInt(da)}(${dowNames[dow]})`, value: valByDay[day], dow };
+      return { label: `${parseInt(mo)}/${parseInt(da)}(${dowNames[dow]})`, value: valByDay[day], dow, from:day, to:day };
     });
   } else if(gran==='week'){
     for(let i=0;i<trendDays.length;i+=7){
       const chunk = trendDays.slice(i,i+7);
       const [,mo,da] = chunk[0].split('-');
       const value = chunk.reduce((s,day)=>s+valByDay[day],0);
-      buckets.push({ label: `${parseInt(mo)}/${parseInt(da)}〜`, value });
+      buckets.push({ label: `${parseInt(mo)}/${parseInt(da)}〜`, value, from:chunk[0], to:chunk[chunk.length-1] });
     }
   } else { // month
-    const byMonth = {};
+    const byMonth = {}, monthFrom = {}, monthTo = {};
     trendDays.forEach(day=>{
       const key = day.slice(0,7);
       byMonth[key] = (byMonth[key]||0) + valByDay[day];
+      if(!monthFrom[key]) monthFrom[key] = day;
+      monthTo[key] = day;
     });
     buckets = Object.entries(byMonth).map(([key,value])=>{
       const [,mo] = key.split('-');
-      return { label: `${parseInt(mo)}月`, value };
+      return { label: `${parseInt(mo)}月`, value, from:monthFrom[key], to:monthTo[key] };
     });
   }
   const dayVals = buckets.map(b=>b.value);
   const maxVal = Math.max(1, ...dayVals.map(v=>Math.abs(v)));
   const labelEvery = 1;
 
+  let trendDetailHtml = '';
+  if(state.trendSelectedIdx!=null && buckets[state.trendSelectedIdx]){
+    const b = buckets[state.trendSelectedIdx];
+    const recs = state.transactions
+      .filter(t=> t.date>=b.from && t.date<=b.to && (!expenseOnly || t.type==='expense'))
+      .sort((x,y)=> y.date.localeCompare(x.date) || ((y.createdAt||0)-(x.createdAt||0)));
+    const fmtMD = d=>{ const [,mo,da] = d.split('-').map(Number); return `${mo}/${da}`; };
+    const title = b.from===b.to ? fmtMD(b.from) : `${fmtMD(b.from)}〜${fmtMD(b.to)}`;
+    trendDetailHtml = `
+      <div class="card" style="margin-top:10px;">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;">
+          <span class="card-label" style="margin-bottom:0;">${title}の内訳</span>
+          <span style="font-size:13px;font-weight:600;">${expenseOnly?'支出 ':'収支 '}${b.value>=0&&!expenseOnly?'+':''}${yen(b.value)}</span>
+        </div>
+        ${recs.length ? recs.map(t=>{
+          const cat = state.categories.find(c=>c.id===t.category);
+          return `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--border);">
+            <span style="flex:0 0 40px;font-size:11px;color:var(--text-sub);">${fmtMD(t.date)}</span>
+            <div style="flex:1;min-width:0;"><div style="font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(cat?cat.name:'不明')}${t.memo?'・'+escapeHtml(t.memo):''}</div><div style="font-size:11px;color:var(--text-sub);">${escapeHtml(accountNameOrUnset(t.accountId))}</div></div>
+            <span style="flex:0 0 auto;font-size:13px;font-weight:600;color:${t.type==='income'?'var(--success)':'var(--danger)'};">${t.type==='income'?'+':'-'}${yen(t.amount)}</span>
+          </div>`;
+        }).join('') : '<div class="no-data">記録がありません</div>'}
+        <div style="text-align:right;margin-top:8px;"><button class="link-btn" id="trendDetailClose">閉じる</button></div>
+      </div>`;
+  }
+
   return `
     <h2 class="screen-title">集計</h2>
-    <div class="card-label">集計期間</div>
-    <button id="rangeBtn"><span>${start} 〜 ${end}</span><span>📅</span></button>
-    <div id="rangeCalWrap">${renderRangeCalendar()}</div>
+    <div style="font-size:11px;color:var(--text-sub);margin-bottom:8px;">${start.replace(/-/g,'/')} 〜 ${end.replace(/-/g,'/')}</div>
     <div class="row2" style="margin-bottom:14px;">
       <div class="card"><div class="card-label">期間の収入</div><div class="card-value" style="color:var(--success)">+${yen(incomeTotal)}</div></div>
       <div class="card"><div class="card-label">期間の支出</div><div class="card-value" style="color:var(--danger)">-${yen(total)}</div></div>
@@ -911,10 +957,12 @@ function renderSummary(){
           }).join('')}</div>
         </div>
       </div>
+      ${trendDetailHtml}
     ` : '<div class="no-data">この期間の記録がありません</div>'}
   `;
 }
 function renderRangeCalendar(){
+  ensureSumRange();
   const y = state.calMonth.getFullYear(), m = state.calMonth.getMonth();
   const first = new Date(y,m,1);
   const startDow = (first.getDay()+6)%7;
@@ -1203,15 +1251,33 @@ function attachScreenEvents(){
     });
   }
   if(state.screen==='summary'){
-    document.getElementById('calPrev').onclick = ()=>{ state.calMonth.setMonth(state.calMonth.getMonth()-1); render(); };
-    document.getElementById('calNext').onclick = ()=>{ state.calMonth.setMonth(state.calMonth.getMonth()+1); render(); };
+    const shiftPeriod = dir=>{
+      if(state.sumRangeManual){
+        const len = Math.round((parseDateStr(state.sumRange.end)-parseDateStr(state.sumRange.start))/86400000)+1;
+        state.sumRange = { start: shiftDateStr(state.sumRange.start, dir*len), end: shiftDateStr(state.sumRange.end, dir*len) };
+      } else {
+        state.sumOffset = (state.sumOffset||0) + dir;
+      }
+      state.trendSelectedIdx = null;
+      render();
+    };
+    document.getElementById('calPrev').onclick = ()=>shiftPeriod(-1);
+    document.getElementById('calNext').onclick = ()=>shiftPeriod(1);
+    const calReset = document.getElementById('calReset');
+    if(calReset) calReset.onclick = ()=>{ state.sumRangeManual = false; state.sumOffset = 0; render(); };
     document.getElementById('calCatFilter').onchange = e=>{ state.calFilter.category = e.target.value; render(); };
-    document.querySelectorAll('.cal-cell[data-day]').forEach(cell=>{
-      cell.addEventListener('click', ()=>openDayModal(parseInt(cell.dataset.day)));
+    document.querySelectorAll('.cal-day[data-date]').forEach(cell=>{
+      cell.addEventListener('click', ()=>openDayModal(cell.dataset.date));
     });
     document.getElementById('rangeBtn').onclick = ()=>{
       const w = document.getElementById('rangeCalWrap');
-      w.style.display = w.style.display==='none' ? 'block' : 'none';
+      const opening = getComputedStyle(w).display==='none';
+      if(opening){
+        const sd = parseDateStr(state.sumRange.start);
+        state.calMonth = new Date(sd.getFullYear(), sd.getMonth(), 1);
+        w.innerHTML = renderRangeCalendar();
+      }
+      w.style.display = opening ? 'block' : 'none';
       state.rangePicking = 'start';
       attachRangeCalEvents();
     };
@@ -1227,6 +1293,8 @@ function attachScreenEvents(){
         render();
       };
     });
+    const trendDetailClose = document.getElementById('trendDetailClose');
+    if(trendDetailClose) trendDetailClose.onclick = ()=>{ state.trendSelectedIdx = null; render(); };
     document.getElementById('trendRangeBtn').onclick = (e)=>{
       const btn = e.currentTarget;
       openTrendRangeForm(btn.dataset.autoStart, btn.dataset.autoEnd);
@@ -1365,8 +1433,8 @@ function attachScreenEvents(){
 
 function attachRangeCalEvents(){
   const prev = document.getElementById('rcPrev'), next = document.getElementById('rcNext');
-  if(prev) prev.onclick = ()=>{ state.calMonth.setMonth(state.calMonth.getMonth()-1); document.getElementById('rangeCalWrap').innerHTML = renderRangeCalendar(); attachRangeCalEvents(); };
-  if(next) next.onclick = ()=>{ state.calMonth.setMonth(state.calMonth.getMonth()+1); document.getElementById('rangeCalWrap').innerHTML = renderRangeCalendar(); attachRangeCalEvents(); };
+  if(prev) prev.onclick = ()=>{ state.calMonth = new Date(state.calMonth.getFullYear(), state.calMonth.getMonth()-1, 1); document.getElementById('rangeCalWrap').innerHTML = renderRangeCalendar(); attachRangeCalEvents(); };
+  if(next) next.onclick = ()=>{ state.calMonth = new Date(state.calMonth.getFullYear(), state.calMonth.getMonth()+1, 1); document.getElementById('rangeCalWrap').innerHTML = renderRangeCalendar(); attachRangeCalEvents(); };
   document.querySelectorAll('.rangeday').forEach(cell=>{
     cell.onclick = ()=>{
       const date = cell.dataset.date;
@@ -1386,9 +1454,9 @@ function attachRangeCalEvents(){
 }
 
 /* ---- 日別内訳モーダル(カレンダー、スワイプ削除つき) ---- */
-function openDayModal(day){
-  const y = state.calMonth.getFullYear(), m = state.calMonth.getMonth();
-  const dateStr = `${y}-${String(m+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+function openDayModal(dateStr){
+  const [, mm, dd] = dateStr.split('-').map(Number);
+  const m = mm-1, day = dd;
   const items = state.transactions.filter(t=>t.date===dateStr);
   const box = document.getElementById('modalBox');
   box.innerHTML = `
