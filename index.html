@@ -506,7 +506,7 @@ function render(){
   }
   if(state.screen==='home') area.innerHTML = renderHome();
   if(state.screen==='input') area.innerHTML = renderInput();
-  if(state.screen==='summary') area.innerHTML = renderCalendar() + renderSummary() + renderList();
+  if(state.screen==='summary') renderHome(); area.innerHTML = renderCalendar() + renderAnalysis() + renderSummary() + renderList();
   if(state.screen==='edit') area.innerHTML = renderEdit();
   if(state.screen==='advances') area.innerHTML = renderAdvances();
   if(state.screen==='shopping') area.innerHTML = renderShopping();
@@ -625,6 +625,7 @@ function renderHome(){
   const usableNow = monthIncome - fixedCostsTotal - budgetTotal - reservedSavings - extraExpense - advOutPeriod;
   const carryover = allBalance + monthExpense - fixedCostsTotal - budgetTotal - reservedSavings - extraExpense;
   const advTotal = unsettledAdv.reduce((s,a)=>s+a.amount,0);
+  state.lastUsable = usableNow;
 
   return `
     <h2 class="screen-title">ホーム</h2>
@@ -830,6 +831,86 @@ function renderInput(){
 }
 
 /* ---------- 集計 ---------- */
+
+function renderAnalysis(){
+  ensureSumRange();
+  const {start,end} = state.sumRange;
+  const fixedCat = state.categories.find(c=>c.type==='expense' && c.name==='固定費');
+  const fixedCatId = fixedCat ? fixedCat.id : null;
+  const isFree = t => t.type==='expense' && !t.fixedCostId && t.category!==fixedCatId;
+  const free = state.transactions.filter(isFree);
+  const dayMs = 86400000;
+  const total = Math.round((parseDateStr(end)-parseDateStr(start))/dayMs)+1;
+  const todayStr_ = toLocalStr(new Date());
+  let elapsed = todayStr_>=end ? total : (todayStr_<start ? 0 : Math.round((parseDateStr(todayStr_)-parseDateStr(start))/dayMs)+1);
+  if(elapsed===0) return `<div class="card"><div class="card-label">今期の分析</div><div class="no-data">この期間はまだ始まっていません</div></div>`;
+  const remaining = total - elapsed;
+  const curEnd = shiftDateStr(start, elapsed-1);
+  const prevStart = shiftDateStr(start, -total), prevEnd = shiftDateStr(prevStart, elapsed-1);
+  const cur = free.filter(t=>t.date>=start && t.date<=curEnd);
+  const prev = free.filter(t=>t.date>=prevStart && t.date<=prevEnd);
+  const curSum = cur.reduce((s,t)=>s+t.amount,0);
+  const prevSum = prev.reduce((s,t)=>s+t.amount,0);
+  const diff = curSum - prevSum;
+  const avg = curSum/elapsed;
+  const forecast = Math.round(avg*total);
+  const sgn = n => (n>0?'+':'') + yen(n);
+  // 使えるお金との比較(今期のみ)
+  let usableHtml = '';
+  const cp = getCurrentPeriod();
+  if(start===cp.start && remaining>0 && state.lastUsable!=null){
+    const budgetCats = new Set(state.budgets.map(b=>b.categoryId));
+    const extraSum = cur.filter(t=>!budgetCats.has(t.category)).reduce((s,t)=>s+t.amount,0);
+    const extraAvg = extraSum/elapsed;
+    const u = state.lastUsable;
+    if(u<0){
+      usableHtml = `<div class="an-row"><span>使えるお金との比較</span><b style="color:var(--danger);">使えるお金がマイナスです(${yen(u)})</b></div>`;
+    } else {
+      const perDay = Math.floor(u/remaining);
+      const over = extraAvg > perDay;
+      usableHtml = `<div class="an-row"><span>使えるお金との比較</span><b style="color:${over?'var(--danger)':'#2E9E6B'};">${over?'このペースだと超えそう':'このペースなら足ります'}</b></div>
+      <div class="an-sub">予算外の支出は1日平均${yen(Math.round(extraAvg))}。使えるお金${yen(u)}÷残り${remaining}日=1日${yen(perDay)}まで</div>`;
+    }
+  }
+  // カテゴリ別の前期との差
+  const catName = id => { const c = state.categories.find(c=>c.id===id); return c?c.name:'不明'; };
+  const cm = {}, pm = {};
+  cur.forEach(t=>{ cm[t.category]=(cm[t.category]||0)+t.amount; });
+  prev.forEach(t=>{ pm[t.category]=(pm[t.category]||0)+t.amount; });
+  const diffs = [...new Set([...Object.keys(cm),...Object.keys(pm)])].map(id=>({name:catName(id), d:(cm[id]||0)-(pm[id]||0)})).filter(x=>x.d!==0);
+  const ups = diffs.filter(x=>x.d>0).sort((a,b)=>b.d-a.d).slice(0,3);
+  const downs = diffs.filter(x=>x.d<0).sort((a,b)=>a.d-b.d).slice(0,3);
+  // 曜日別
+  const dow = [0,0,0,0,0,0,0];
+  cur.forEach(t=>{ dow[(parseDateStr(t.date).getDay()+6)%7]+=t.amount; });
+  const dowMax = Math.max(...dow);
+  const dn = ['月','火','水','木','金','土','日'];
+  const maxIdx = dowMax>0 ? dow.indexOf(dowMax) : -1;
+  // コメント
+  const cmts = [];
+  if(prevSum>0) cmts.push(`前期の同じ日数より${yen(Math.abs(diff))}${diff>=0?'多く':'少なく'}使っています。`);
+  if(ups[0]) cmts.push(`${ups[0].name}が前期より${yen(ups[0].d)}増えています。`);
+  if(downs[0]) cmts.push(`${downs[0].name}は前期より${yen(-downs[0].d)}減っています。`);
+  if(maxIdx>=0) cmts.push(`${dn[maxIdx]}曜日に使うことが多いです。`);
+  return `
+    <style>.an-row{display:flex;justify-content:space-between;align-items:baseline;padding:6px 0;font-size:13px;}.an-sub{font-size:11px;color:var(--text-sub);padding-bottom:6px;}.an-h{font-size:12px;color:var(--text-sub);margin:12px 0 4px;}</style>
+    <div class="card">
+      <div class="card-label">今期の分析</div>
+      <div class="an-sub">固定費・貯蓄・立替・振替を除いた支出です(${start.slice(5).replace('-','/')}〜${curEnd.slice(5).replace('-','/')}の${elapsed}日間)</div>
+      <div class="an-row"><span>支出合計</span><b>${yen(curSum)}</b></div>
+      <div class="an-row"><span>前期の同じ日数</span><b>${yen(prevSum)}(${sgn(diff)})</b></div>
+      <div class="an-row"><span>1日あたりの平均</span><b>${yen(Math.round(avg))}</b></div>
+      <div class="an-row"><span>期末までの見込み</span><b>${yen(forecast)}</b></div>
+      ${usableHtml}
+      <div class="an-h">前期より増えたカテゴリ</div>
+      ${ups.length?ups.map(x=>`<div class="an-row"><span>${escapeHtml(x.name)}</span><b style="color:var(--danger);">${sgn(x.d)}</b></div>`).join(''):'<div class="an-sub">なし</div>'}
+      <div class="an-h">前期より減ったカテゴリ</div>
+      ${downs.length?downs.map(x=>`<div class="an-row"><span>${escapeHtml(x.name)}</span><b style="color:#2E9E6B;">${sgn(x.d)}</b></div>`).join(''):'<div class="an-sub">なし</div>'}
+      <div class="an-h">曜日別の支出</div>
+      ${dow.map((v,i)=>`<div style="display:flex;align-items:center;gap:8px;font-size:12px;padding:2px 0;"><span style="width:16px;">${dn[i]}</span><div style="flex:1;background:var(--surface-2);border-radius:4px;height:10px;"><div style="width:${dowMax>0?v/dowMax*100:0}%;height:10px;border-radius:4px;background:${i===maxIdx?'#E8A33D':'var(--text-sub)'};"></div></div><span style="width:80px;text-align:right;">${yen(v)}</span></div>`).join('')}
+      ${cmts.length?`<div class="an-h">ひと言</div><div style="font-size:13px;line-height:1.7;">${cmts.join('<br>')}</div>`:''}
+    </div>`;
+}
 function renderSummary(){
   ensureSumRange();
   const {start,end} = state.sumRange;
