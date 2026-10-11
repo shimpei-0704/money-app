@@ -593,7 +593,7 @@ function renderHome(){
     if(need>0 && a.balance < need){
       const isSav = savAcc && a.id===savAcc.id;
       const adv = isSav ? unsettledAll : 0;
-      const msg = `${a.name} 貯蓄過不足 ${yen(a.balance-need)}(立替未精算${yen(adv)}) 清算後 ${yen(a.balance+adv-need)}`;
+      const msg = `${a.name} 貯蓄過不足 ${yen(a.balance-need)}(立替未精算${yen(adv)}) 清算後 ${yen(a.balance+adv)}`;
       if(adv>0 && a.balance + adv >= need){ level = 'orange'; }
       else { level = 'red'; }
       accNotices.push({ level, text: msg });
