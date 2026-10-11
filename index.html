@@ -593,13 +593,10 @@ function renderHome(){
     if(need>0 && a.balance < need){
       const isSav = savAcc && a.id===savAcc.id;
       const adv = isSav ? unsettledAll : 0;
-      if(adv>0 && a.balance + adv >= need){
-        level = 'orange';
-        accNotices.push({ level, text:`${a.name}は貯蓄実績(${yen(need)})より${yen(need-a.balance)}少ない状態ですが、立替${yen(adv)}が未清算です。清算されると足ります。` });
-      } else {
-        level = 'red';
-        accNotices.push({ level, text:`${a.name}の残高が貯蓄実績(${yen(need)})より${yen(need-a.balance)}少なくなっています。${adv>0?`(立替${yen(adv)}が未清算ですが、戻っても足りません)`:''}貯蓄に回すお金が足りていない可能性があります。` });
-      }
+      const msg = `${a.name} 貯蓄過不足 ${yen(a.balance-need)}(立替未精算${yen(adv)}) 清算後 ${yen(a.balance+adv-need)}`;
+      if(adv>0 && a.balance + adv >= need){ level = 'orange'; }
+      else { level = 'red'; }
+      accNotices.push({ level, text: msg });
     }
     accStatus[a.id] = level;
   });
