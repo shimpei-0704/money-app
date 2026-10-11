@@ -835,9 +835,10 @@ function renderSummary(){
     const e = new Date(todayD);
     let s;
     if(gran==='day'){ s = new Date(e); s.setDate(s.getDate()-6); }
-    else if(gran==='week'){ s = new Date(e); s.setMonth(s.getMonth()-1); s.setDate(s.getDate()+1); }
+    else if(gran==='week'){ s = new Date(getCurrentPeriod().startDate); }
     else { s = new Date(e.getFullYear(), e.getMonth()-11, 1); }
     autoTrendStart = toLocalStr(s); autoTrendEnd = toLocalStr(e);
+    if(gran==='week'){ const pe = new Date(getCurrentPeriod().endDate); pe.setDate(pe.getDate()-1); autoTrendEnd = toLocalStr(pe); }
   }
   let trendStart, trendEnd;
   if(state.trendRangeManual && state.trendRange){
@@ -867,8 +868,13 @@ function renderSummary(){
       return { label: `${parseInt(mo)}/${parseInt(da)}(${dowNames[dow]})`, value: valByDay[day], dow, from:day, to:day };
     });
   } else if(gran==='week'){
-    for(let i=0;i<trendDays.length;i+=7){
-      const chunk = trendDays.slice(i,i+7);
+    const weekChunks = [];
+    trendDays.forEach((day,i)=>{
+      const isMonday = new Date(day+'T00:00:00').getDay()===1;
+      if(i===0 || isMonday) weekChunks.push([]);
+      weekChunks[weekChunks.length-1].push(day);
+    });
+    for(const chunk of weekChunks){
       const [,mo,da] = chunk[0].split('-');
       const value = chunk.reduce((s,day)=>s+valByDay[day],0);
       buckets.push({ label: `${parseInt(mo)}/${parseInt(da)}〜`, value, from:chunk[0], to:chunk[chunk.length-1] });
