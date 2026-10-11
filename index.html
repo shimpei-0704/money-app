@@ -854,6 +854,20 @@ function renderAnalysis(){
   const avg = curSum/elapsed;
   const forecast = Math.round(avg*total);
   const sgn = n => (n>0?'+':'') + yen(n);
+  const OR = '#E8A33D', GR = '#2E9E6B';
+  const dcol = d => d>0 ? OR : (d<0 ? GR : 'var(--text-sub)');
+  // 固定費・貯蓄・予算
+  const allExp = state.transactions.filter(t=>t.type==='expense');
+  const isFixed = t => t.fixedCostId || t.category===fixedCatId;
+  const budgetCats2 = new Set(state.budgets.map(b=>b.categoryId));
+  const sumIn = (arr,a,b)=> arr.filter(t=>t.date>=a && t.date<=b).reduce((x,t)=>x+t.amount,0);
+  const fixedCur = sumIn(allExp.filter(isFixed), start, curEnd), fixedPrev = sumIn(allExp.filter(isFixed), prevStart, prevEnd);
+  const budCur = sumIn(allExp.filter(t=>!isFixed(t) && budgetCats2.has(t.category)), start, curEnd);
+  const budPrev = sumIn(allExp.filter(t=>!isFixed(t) && budgetCats2.has(t.category)), prevStart, prevEnd);
+  const savIn = (a,b)=> state.goals.reduce((x,g)=> x + Object.entries(g.contributions||{}).filter(([k])=>k>=a && k<=b).reduce((y,[,v])=>y+contribAmt(v),0), 0);
+  const savCur = savIn(start,end), savPrev = savIn(prevStart, shiftDateStr(start,-1));
+  const cmpRows = (label, c, p) => `<div class="an-row"><span>${label}</span><b>${yen(c)}</b></div>
+      <div class="an-row"><span>前期との比較</span><b style="color:${dcol(c-p)};">${sgn(c-p)}</b></div>`;
   // カテゴリ別の前期との差
   const catName = id => { const c = state.categories.find(c=>c.id===id); return c?c.name:'不明'; };
   const cm = {}, pm = {};
@@ -868,8 +882,6 @@ function renderAnalysis(){
   const dowMax = Math.max(...dow);
   const dn = ['月','火','水','木','金','土','日'];
   const maxIdx = dowMax>0 ? dow.indexOf(dowMax) : -1;
-  const OR = '#E8A33D', GR = '#2E9E6B';
-  const dcol = d => d>0 ? OR : (d<0 ? GR : 'var(--text-sub)');
   return `
     <style>.an-row{display:flex;justify-content:space-between;align-items:baseline;padding:5px 0;font-size:13px;}.an-sub{font-size:11px;color:var(--text-sub);padding-bottom:6px;}.an-h{font-size:12px;color:var(--text-sub);margin:12px 0 4px;}</style>
     <div class="card-label">支出の分析</div>
@@ -879,6 +891,11 @@ function renderAnalysis(){
       <div class="an-row"><span>前期との比較</span><b style="color:${dcol(diff)};">${sgn(diff)}</b></div>
       <div class="an-sub">前期の同じ日数は${yen(prevSum)}。プラスは前期より多く使っている(オレンジ)、マイナスは少ない(緑)です。</div>
       <div class="an-row"><span>1日あたりの平均</span><b>${yen(Math.round(avg))}</b></div>
+      <div class="an-h">固定費・貯蓄・予算</div>
+      ${cmpRows('固定費 合計', fixedCur, fixedPrev)}
+      ${cmpRows('貯蓄 合計', savCur, savPrev)}
+      ${cmpRows('予算 合計(予算カテゴリの支出)', budCur, budPrev)}
+      <div class="an-sub">貯蓄は、期間内に積み立てた貯蓄実績の合計です。</div>
       <div class="an-h">前期より増えたカテゴリ</div>
       ${ups.length?ups.map(x=>`<div class="an-row"><span>${escapeHtml(x.name)}</span><b style="color:${OR};">${sgn(x.d)}</b></div>`).join(''):'<div class="an-sub">なし</div>'}
       <div class="an-h">前期より減ったカテゴリ</div>
