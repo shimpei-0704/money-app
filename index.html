@@ -140,6 +140,14 @@
   /* ---- Summary ---- */
   #rangeBtn{ width:100%; text-align:left; padding:11px 14px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; cursor:pointer; font-size:13px; color:var(--text); }
   #rangeCalWrap{ display:none; margin-bottom:14px; }
+  .cat-bars{ margin-bottom:18px; }
+  .cat-bar-row{ margin-bottom:10px; }
+  .cat-bar-head{ display:flex; justify-content:space-between; align-items:baseline; font-size:13px; margin-bottom:4px; gap:8px; }
+  .cat-bar-name{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cat-bar-val{ flex:0 0 auto; font-weight:600; }
+  .cat-bar-pct{ font-size:11px; color:var(--text-sub); font-weight:400; margin-left:8px; display:inline-block; min-width:30px; text-align:right; }
+  .cat-bar-track{ height:8px; background:var(--surface-2); border-radius:4px; overflow:hidden; }
+  .cat-bar-fill{ height:100%; border-radius:4px; }
   .pie-wrap{ display:flex; justify-content:center; margin-bottom:14px; }
   .pie-legend{ display:flex; flex-wrap:wrap; gap:8px 14px; justify-content:center; font-size:12px; margin-bottom:18px; }
   .bar-chart{ display:flex; align-items:flex-end; gap:4px; height:100px; border-top:1px solid var(--border); padding-top:6px; }
@@ -787,7 +795,9 @@ function renderSummary(){
     const c = state.categories.find(c=>c.id===id);
     return { name: c?c.name:'不明', color: c?c.color:'#999', amt };
   });
+  catEntries.sort((a,b)=>b.amt-a.amt);
   const total = catEntries.reduce((s,c)=>s+c.amt,0);
+  const catMax = catEntries.length ? catEntries[0].amt : 0;
 
   let gradient = '', acc = 0;
   catEntries.forEach(c=>{
@@ -869,8 +879,11 @@ function renderSummary(){
     </div>
     ${total>0 ? `
       <div class="card-label">支出のカテゴリ内訳</div>
-      <div class="pie-wrap"><div style="width:140px;height:140px;border-radius:50%;background:conic-gradient(${gradient});"></div></div>
-      <div class="pie-legend">${catEntries.map(c=>`<span><span class="dot" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${c.color};margin-right:4px;"></span>${escapeHtml(c.name)} ${yen(c.amt)}</span>`).join('')}</div>
+      <div class="cat-bars">${catEntries.map(c=>`
+        <div class="cat-bar-row">
+          <div class="cat-bar-head"><span class="cat-bar-name"><span class="dot" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${c.color};margin-right:6px;"></span>${escapeHtml(c.name)}</span><span class="cat-bar-val">${yen(c.amt)}<span class="cat-bar-pct">${Math.round(c.amt/total*100)}%</span></span></div>
+          <div class="cat-bar-track"><div class="cat-bar-fill" style="width:${catMax>0?Math.max(1,c.amt/catMax*100):0}%;background:${c.color};"></div></div>
+        </div>`).join('')}</div>
     ` : ''}
     <div class="card-label">期間内の収支推移</div>
     <div style="font-size:11px;color:var(--text-sub);margin-bottom:6px;">${expenseOnly ? '期間ごとの支出合計を棒グラフにしたものです。棒が長いほど支出が多いことを表します。' : '「収入−支出」を棒グラフにしたものです。緑の棒はその期間が収入超過(お金が増えた)、赤の棒は支出超過(お金が減った)で、棒が長いほど金額が大きいことを表します。'}</div>
