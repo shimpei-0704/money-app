@@ -310,6 +310,7 @@ const state = {
   sumRange: null,
   sumRangeManual: false,
   sumOffset: 0,
+  savingsAccountId: '',
   trendGranularity: 'day',
   trendRange: null,
   trendRangeManual: false,
@@ -480,6 +481,7 @@ function listenAll(){
   }));
   unsubs.push(onSnapshot(doc(db,'users',state.uid,'meta','settings'), snap => {
     state.monthStartDay = snap.exists() ? (snap.data().monthStartDay||1) : 1;
+    state.savingsAccountId = snap.exists() ? (snap.data().savingsAccountId||'') : '';
     state.periodOverrides = snap.exists() ? (snap.data().periodOverrides||{}) : {};
     markLoaded('settings'); render();
   }));
@@ -560,6 +562,12 @@ function advReturnAccount(a){ return a.settleAccountId || a.accountId || ''; }
 function accountOptionsHtml(selectedId, includeEmpty){
   return (includeEmpty?`<option value="">未設定</option>`:'') + state.accounts.map(a=>`<option value="${a.id}" ${selectedId===a.id?'selected':''}>${escapeHtml(a.name)}</option>`).join('');
 }
+function savingsAccount(){
+  return state.accounts.find(a=>a.name==='口座1') || state.accounts[0] || null;
+}
+function goalAccount(g){
+  return state.accounts.find(a=>a.id===g.accountId) || savingsAccount();
+}
 function accountNameOrUnset(accountId){
   const a = state.accounts.find(x=>x.id===accountId);
   return a ? a.name : '未設定';
@@ -573,6 +581,28 @@ function renderHome(){
   const accountBalances = state.accounts.map(a=>({ id:a.id, name:a.name, balance: accountBalance(a.id) }));
   const allBalance = accountBalances.reduce((s,a)=>s+a.balance, 0);
   const allocatedTotal = state.goals.reduce((s,g)=>s+goalCumulative(g),0);
+  const savAcc = savingsAccount();
+  const unsettledAll = state.advances.filter(a=>!a.settled).reduce((s,a)=>s+a.amount,0);
+  const goalsByAcc = {};
+  state.goals.forEach(g=>{ const ga = goalAccount(g); if(ga) goalsByAcc[ga.id] = (goalsByAcc[ga.id]||0) + goalCumulative(g); });
+  const accStatus = {};
+  const accNotices = [];
+  accountBalances.forEach(a=>{
+    const need = goalsByAcc[a.id]||0;
+    let level = '';
+    if(need>0 && a.balance < need){
+      const isSav = savAcc && a.id===savAcc.id;
+      const adv = isSav ? unsettledAll : 0;
+      if(adv>0 && a.balance + adv >= need){
+        level = 'orange';
+        accNotices.push({ level, text:`${a.name}は貯蓄実績(${yen(need)})より${yen(need-a.balance)}少ない状態ですが、立替${yen(adv)}が未清算です。清算されると足ります。` });
+      } else {
+        level = 'red';
+        accNotices.push({ level, text:`${a.name}の残高が貯蓄実績(${yen(need)})より${yen(need-a.balance)}少なくなっています。${adv>0?`(立替${yen(adv)}が未清算ですが、戻っても足りません)`:''}貯蓄に回すお金が足りていない可能性があります。` });
+      }
+    }
+    accStatus[a.id] = level;
+  });
 
   const today = new Date();
   const startDay = Math.min(28, Math.max(1, state.monthStartDay||1));
@@ -613,9 +643,10 @@ function renderHome(){
         ${accountBalances.map((a,i)=>`
         <div class="account-tile">
           <div class="aname"><span class="dot" style="background:${PALETTE[i%PALETTE.length]}"></span>${escapeHtml(a.name)}</div>
-          <div class="abal ${a.balance<0?'neg':''}">${yen(a.balance)}</div>
+          <div class="abal ${a.balance<0?'neg':''}" style="${accStatus[a.id]==='red'?'color:var(--danger);':(accStatus[a.id]==='orange'?'color:#E8A33D;':'')}">${yen(a.balance)}</div>
         </div>`).join('')}
-      </div>` : ''}
+      </div>
+      ${accNotices.length ? `<div style="margin-top:10px;font-size:11px;line-height:1.6;">${accNotices.map(n=>`<div style="color:${n.level==='red'?'var(--danger)':'#E8A33D'};">${n.level==='red'?'⚠ ':'・'}${escapeHtml(n.text)}</div>`).join('')}</div>` : ''}` : ''}
     </div>
     ${state.goals.length ? `
     <div class="card">
@@ -1599,12 +1630,12 @@ function openGoalForm(existing){
     <div class="form-field"><label>目標名(例:旅行資金)</label><input type="text" id="goalName" value="${existing?escapeHtml(existing.name):''}"></div>
     <div class="form-field"><label>目標金額(円)</label><input type="text" id="goalTarget" class="amt-input" value="${existing?existing.targetAmount.toLocaleString('ja-JP'):''}" inputmode="numeric"></div>
     <div class="form-field"><label>毎月の貯蓄目標額(円・任意)</label><input type="text" id="goalMonthly" class="amt-input" value="${existing&&existing.monthlyTarget?existing.monthlyTarget.toLocaleString('ja-JP'):''}" inputmode="numeric" placeholder="設定すると、ホームの「使えるお金」から自動的に差し引かれます"></div>
+    <div class="form-field"><label>積立先の口座</label><select id="goalAcc">${accountOptionsHtml(existing?(goalAccount(existing)||{}).id:(savingsAccount()||{}).id, false)}</select></div>
     <div id="goalLegacyWrap" class="form-field" style="display:none;">
       <label>現在の配分額(円)</label><input type="text" id="goalAllocated" class="amt-input" value="${existing?(existing.allocatedAmount||0).toLocaleString('ja-JP'):''}" inputmode="numeric">
     </div>
     <div id="goalMonthlyWrap" style="display:none;">
       <div class="form-field"><label>今期(${period.start}〜)の実績(円)</label><input type="text" id="goalCurContrib" class="amt-input" value="${curContrib!=null?curContrib.toLocaleString('ja-JP'):''}" inputmode="numeric" placeholder="未入力なら毎月の目標額として計算されます"></div>
-      <div class="form-field"><label>積み立てた口座(任意)</label><select id="goalCurAccount">${accountOptionsHtml(curContribAccount, true)}</select></div>
       ${existing?`<div style="font-size:11px;color:var(--text-sub);margin-bottom:10px;">現在の累計:${yen(cumulative)} / ${yen(existing.targetAmount)}</div>
       <button class="link-btn" id="goalPastBtn" style="margin-bottom:10px;">過去の月の実績を入力・修正</button>`:''}
     </div>
@@ -1642,13 +1673,12 @@ function openGoalForm(existing){
     const errEl = document.getElementById('goalErr');
     if(!name){ errEl.textContent = '目標名を入力してください'; return; }
     if(targetAmount<=0){ errEl.textContent = '目標金額を正しく入力してください'; return; }
-    const data = { name, targetAmount, monthlyTarget: monthlyTarget||0 };
+    const data = { name, targetAmount, monthlyTarget: monthlyTarget||0, accountId: document.getElementById('goalAcc').value };
     if(monthlyTarget>0){
       const val = document.getElementById('goalCurContrib').value;
       const contributions = { ...(existing&&existing.contributions||{}) };
       if(val.trim()!==''){
-        const accId = document.getElementById('goalCurAccount').value;
-        contributions[period.start] = accId ? { amount: parseAmt(val), accountId: accId } : parseAmt(val);
+        contributions[period.start] = parseAmt(val);
       }
       data.contributions = contributions;
     } else {
@@ -1668,7 +1698,6 @@ function openGoalPastContribForm(goal){
     <div class="mh"><span>${escapeHtml(goal.name)}・月ごとの実績</span><button id="mClose">✕</button></div>
     <div class="form-field"><label>対象の期間に含まれる日付</label><input type="date" id="gcDate" value="${todayStr()}"></div>
     <div class="form-field"><label>その期間の実績(円)</label><input type="text" id="gcAmt" class="amt-input" inputmode="numeric"></div>
-    <div class="form-field"><label>積み立てた口座(任意)</label><select id="gcAccount">${accountOptionsHtml('', true)}</select></div>
     <div id="gcErr" style="color:var(--danger);font-size:12px;min-height:16px;"></div>
     <div class="form-actions">
       <button class="cancel" id="fBack">戻る</button>
@@ -1687,10 +1716,9 @@ function openGoalPastContribForm(goal){
     const errEl = document.getElementById('gcErr');
     if(!dateVal){ errEl.textContent = '日付を選択してください'; return; }
     const amt = parseAmt(document.getElementById('gcAmt').value);
-    const accId = document.getElementById('gcAccount').value;
     const [yy,mm,dd] = dateVal.split('-').map(Number);
     const p = getPeriodForDate(new Date(yy,mm-1,dd));
-    const newContrib = { ...(goal.contributions||{}), [p.start]: accId ? { amount:amt, accountId:accId } : amt };
+    const newContrib = { ...(goal.contributions||{}), [p.start]: amt };
     await updateDoc(doc(db,'users',state.uid,'goals',goal.id), { contributions: newContrib });
     openGoalPastContribForm({ ...goal, contributions: newContrib });
   };
@@ -2042,8 +2070,7 @@ function openAdvanceForm(existing){
     <div class="form-field"><label>レシート写真(任意)</label><input type="file" accept="image/*" id="aReceipt">
       <div id="aReceiptPreview" style="margin-top:8px;">${receiptData?`<img src="${receiptData}" style="max-width:100px;border-radius:8px;">`:''}</div>
     </div>
-    <div class="form-field"><label><input type="checkbox" id="aSettled" ${existing&&existing.settled?'checked':''} style="width:auto;margin-right:6px;">精算済みにする</label></div>
-    <div class="form-field" id="aSettleWrap" style="display:none;"><label>戻す先の口座</label><select id="aSettleAccount">${accountOptionsHtml(existing?(existing.settleAccountId||existing.accountId||''):'', false)}</select></div>
+    <div class="form-field"><label><input type="checkbox" id="aSettled" ${existing&&existing.settled?'checked':''} style="width:auto;margin-right:6px;">精算済みにする(口座1に戻ります)</label></div>
     <div id="aErr" style="color:var(--danger);font-size:12px;min-height:16px;"></div>
     <div class="form-actions">
       <button class="cancel" id="fCancel">キャンセル</button>
@@ -2055,12 +2082,7 @@ function openAdvanceForm(existing){
   document.getElementById('mClose').onclick = closeModal;
   document.getElementById('fCancel').onclick = closeModal;
   const settledCb = document.getElementById('aSettled');
-  const settleWrap = document.getElementById('aSettleWrap');
-  const settleSel = document.getElementById('aSettleAccount');
   const accSel = document.getElementById('aAccount');
-  const syncSettle = ()=>{ settleWrap.style.display = settledCb.checked ? 'block' : 'none'; };
-  settledCb.onchange = ()=>{ if(settledCb.checked && !(existing&&existing.settleAccountId)) settleSel.value = accSel.value; syncSettle(); };
-  syncSettle();
   const personSel = document.getElementById('aPersonSel');
   const personNewWrap = document.getElementById('aPersonNewWrap');
   personNewWrap.style.display = personSel.value==='__new__' ? 'block' : 'none';
@@ -2093,7 +2115,7 @@ function openAdvanceForm(existing){
       memo: document.getElementById('aMemo').value.trim(),
       accountId: document.getElementById('aAccount').value,
       settled: document.getElementById('aSettled').checked,
-      settleAccountId: document.getElementById('aSettled').checked ? document.getElementById('aSettleAccount').value : '',
+      settleAccountId: document.getElementById('aSettled').checked ? ((existing&&existing.settleAccountId) || (savingsAccount()||{}).id || document.getElementById('aAccount').value) : '',
       receiptImg: receiptData || null
     };
     if(data.amount<=0){ errEl.textContent = '金額を正しく入力してください'; return; }
