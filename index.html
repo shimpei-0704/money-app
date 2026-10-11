@@ -1104,6 +1104,8 @@ function renderList(){
       <label><input type="checkbox" id="fIncome" ${f.income?'checked':''} style="width:auto;margin-right:4px;">収入</label>
       <label><input type="checkbox" id="fAdvance" ${f.advance?'checked':''} style="width:auto;margin-right:4px;">立替</label>
       <label><input type="checkbox" id="fTransfer" ${f.transfer?'checked':''} style="width:auto;margin-right:4px;">振替</label>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px;font-size:13px;">
       <button type="button" id="fCategoryBtn" class="cat-select-btn">${catBtnLabel} ${state.listCatOpen?'▲':'▼'}</button>
       <button type="button" id="fAccountBtn" class="cat-select-btn">${accBtnLabel} ${state.listAccOpen?'▲':'▼'}</button>
     </div>
