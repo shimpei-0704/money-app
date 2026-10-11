@@ -307,9 +307,10 @@ const state = {
   rangePicking: null,
   authMode: 'login',
   advanceFilter: { person: 'all', status: 'all' },
-  listFilter: { start:'', end:'', expense:true, income:true, advance:true, transfer:true, categories:[] },
+  listFilter: { start:'', end:'', expense:true, income:true, advance:true, transfer:true, categories:[], accounts:[] },
   listFilterManual: false,
   listCatOpen: false,
+  listAccOpen: false,
   trendSelectedIdx: null
 };
 const toLocalStr = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -1069,25 +1070,27 @@ function renderList(){
     if(t.type==='expense' && !f.expense) return;
     if(t.type==='income' && !f.income) return;
     const cat = state.categories.find(c=>c.id===t.category);
-    records.push({ id:t.id, kind:'transaction', type:t.type, date:t.date, createdAt:t.createdAt||0, label: cat?cat.name:'不明', categoryId:t.category, memo:t.memo, amount:t.amount });
+    records.push({ id:t.id, kind:'transaction', type:t.type, date:t.date, createdAt:t.createdAt||0, label: cat?cat.name:'不明', categoryId:t.category, memo:t.memo, amount:t.amount, accountIds:[t.accountId||''], accName: accountNameOrUnset(t.accountId) });
   });
   if(f.advance && !(f.categories && f.categories.length)){
     state.advances.forEach(a=>{
-      records.push({ id:a.id, kind:'advance', type:'advance', date:a.date, createdAt:a.createdAt||0, label:'立替・'+a.person, memo:a.memo, amount:a.amount, settled:a.settled });
+      records.push({ id:a.id, kind:'advance', type:'advance', date:a.date, createdAt:a.createdAt||0, label:'立替・'+a.person, memo:a.memo, amount:a.amount, settled:a.settled, accountIds:[a.accountId||''], accName: accountNameOrUnset(a.accountId) });
     });
   }
   if(f.transfer && !(f.categories && f.categories.length)){
     state.transfers.forEach(tr=>{
       const fromAcc = state.accounts.find(a=>a.id===tr.fromAccountId);
       const toAcc = state.accounts.find(a=>a.id===tr.toAccountId);
-      records.push({ id:tr.id, kind:'transfer', type:'transfer', date:tr.date, createdAt:tr.createdAt||0, label: `振替・${fromAcc?fromAcc.name:'?'}→${toAcc?toAcc.name:'?'}`, memo:tr.memo, amount:tr.amount });
+      records.push({ id:tr.id, kind:'transfer', type:'transfer', date:tr.date, createdAt:tr.createdAt||0, label: `振替・${fromAcc?fromAcc.name:'?'}→${toAcc?toAcc.name:'?'}`, memo:tr.memo, amount:tr.amount, accountIds:[tr.fromAccountId||'', tr.toAccountId||''], accName:'' });
     });
   }
   if(f.start) records = records.filter(r=>r.date>=f.start);
   if(f.end) records = records.filter(r=>r.date<=f.end);
   if(f.categories && f.categories.length) records = records.filter(r=>f.categories.includes(r.categoryId));
+  if(f.accounts && f.accounts.length) records = records.filter(r=>r.accountIds.some(id=>f.accounts.includes(id)));
   records.sort((a,b)=> b.date.localeCompare(a.date) || (b.createdAt-a.createdAt));
 
+  const accBtnLabel = f.accounts.length ? `支出元:${f.accounts.length}件選択` : '支出元:すべて';
   const catBtnLabel = f.categories.length ? `カテゴリ:${f.categories.length}件選択` : 'カテゴリ:すべて';
 
   return `
@@ -1102,7 +1105,15 @@ function renderList(){
       <label><input type="checkbox" id="fAdvance" ${f.advance?'checked':''} style="width:auto;margin-right:4px;">立替</label>
       <label><input type="checkbox" id="fTransfer" ${f.transfer?'checked':''} style="width:auto;margin-right:4px;">振替</label>
       <button type="button" id="fCategoryBtn" class="cat-select-btn">${catBtnLabel} ${state.listCatOpen?'▲':'▼'}</button>
+      <button type="button" id="fAccountBtn" class="cat-select-btn">${accBtnLabel} ${state.listAccOpen?'▲':'▼'}</button>
     </div>
+    ${state.listAccOpen ? `
+    <div id="fAccountPanel" class="cat-select-panel">
+      ${state.accounts.map(a=>`
+        <label class="cat-select-opt"><input type="checkbox" class="fAccOpt" value="${a.id}" ${f.accounts.includes(a.id)?'checked':''}>${escapeHtml(a.name)}</label>
+      `).join('')}
+      <button type="button" class="link-btn" id="fAccountClear" style="margin-top:8px;">選択をクリア</button>
+    </div>` : ''}
     ${state.listCatOpen ? `
     <div id="fCategoryPanel" class="cat-select-panel">
       <div class="cat-select-group-label">支出</div>
@@ -1119,7 +1130,7 @@ function renderList(){
     ${records.length ? records.map(r=>`
       <div class="list-record-row" data-id="${r.id}" data-kind="${r.kind}">
         <div style="flex:0 0 62px;font-size:11px;color:var(--text-sub);">${r.date.slice(5).replace('-','/')}</div>
-        <div style="flex:1;min-width:0;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(r.label)}${r.memo?'・'+escapeHtml(r.memo):''}${r.kind==='advance'?(r.settled?'・精算済み':'・未精算'):''}</div>
+        <div style="flex:1;min-width:0;"><div style="font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(r.label)}${r.memo?'・'+escapeHtml(r.memo):''}${r.kind==='advance'?(r.settled?'・精算済み':'・未精算'):''}</div>${r.accName?`<div style="font-size:11px;color:var(--text-sub);">${escapeHtml(r.accName)}</div>`:''}</div>
         <div style="flex:0 0 auto;font-weight:600;font-size:13px;text-align:right;color:${r.type==='income'?'var(--success)':(r.type==='expense'?'var(--danger)':'var(--text)')};">${r.type==='income'?'+':'-'}${yen(r.amount)}</div>
         ${r.kind==='transaction' ? `<span class="icon-btn list-copy" data-id="${r.id}">⧉</span>` : ''}
         <span class="icon-btn list-edit" data-id="${r.id}" data-kind="${r.kind}">✎</span>
@@ -1221,6 +1232,18 @@ function attachScreenEvents(){
         render();
       };
     });
+    document.getElementById('fAccountBtn').onclick = ()=>{ state.listAccOpen = !state.listAccOpen; render(); };
+    document.querySelectorAll('.fAccOpt').forEach(cb=>{
+      cb.onchange = ()=>{
+        const v = cb.value;
+        const idx = state.listFilter.accounts.indexOf(v);
+        if(cb.checked){ if(idx===-1) state.listFilter.accounts.push(v); }
+        else { if(idx!==-1) state.listFilter.accounts.splice(idx,1); }
+        render();
+      };
+    });
+    const fAccClear = document.getElementById('fAccountClear');
+    if(fAccClear) fAccClear.onclick = ()=>{ state.listFilter.accounts = []; render(); };
     const fCatClear = document.getElementById('fCategoryClear');
     if(fCatClear) fCatClear.onclick = ()=>{ state.listFilter.categories = []; render(); };
     document.querySelectorAll('.list-edit').forEach(b=>{
