@@ -532,9 +532,16 @@ function getPeriodForDate(refDate){
   const s = Math.min(28, Math.max(1, state.monthStartDay||1));
   let baseYear = refDate.getFullYear(), baseMonth = refDate.getMonth();
   if(refDate.getDate() < s) baseMonth -= 1;
-  const startInfo = resolvePeriodStart(baseYear, baseMonth, s);
-  const endInfo = resolvePeriodStart(baseYear, baseMonth+1, s);
-  return { start: toLocalStr(startInfo.date), end: toLocalStr(endInfo.date), startDate: startInfo.date, endDate: endInfo.date, key: startInfo.key, overridden: startInfo.overridden, defaultDay: s };
+  const mk = bm => {
+    const startInfo = resolvePeriodStart(baseYear, bm, s);
+    const endInfo = resolvePeriodStart(baseYear, bm+1, s);
+    return { start: toLocalStr(startInfo.date), end: toLocalStr(endInfo.date), startDate: startInfo.date, endDate: endInfo.date, key: startInfo.key, overridden: startInfo.overridden, defaultDay: s };
+  };
+  for(const off of [0,-1,1]){
+    const p = mk(baseMonth+off);
+    if(refDate>=p.startDate && refDate<p.endDate) return p;
+  }
+  return mk(baseMonth);
 }
 function getCurrentPeriod(){ return getPeriodForDate(new Date()); }
 function getNextPeriodInfo(period){
@@ -1841,33 +1848,70 @@ function openGoalPastContribForm(goal){
 }
 
 function openPeriodForm(){
-  const curPeriod = getCurrentPeriod();
-  const nextPeriod = getNextPeriodInfo(curPeriod);
+  const cur = getCurrentPeriod();
+  const s0 = cur.defaultDay;
+  const [ky,km] = cur.key.split('-').map(Number);
+  const names = {'-4':'4期前','-3':'3期前','-2':'前々期','-1':'前期','0':'今期','1':'来期','2':'2期先'};
+  const ks = [-4,-3,-2,-1,0,1,2];
+  const rows = ks.map(k=>{
+    const info = resolvePeriodStart(ky, km-1+k, s0);
+    return { k, key: info.key, m0: km-1+k, start: toLocalStr(info.date), overridden: info.overridden };
+  });
+  const endOfLast = toLocalStr(resolvePeriodStart(ky, km-1+3, s0).date);
   const box = document.getElementById('modalBox');
+  const rangeText = (i, startVal) => {
+    const nextStart = i<rows.length-1 ? rows[i+1].start : endOfLast;
+    return `${startVal.replace(/-/g,'/')} 〜 ${toLocalStr(new Date(parseDateStr(nextStart).getTime()-86400000)).replace(/-/g,'/')}`;
+  };
   box.innerHTML = `
     <div class="mh"><span>起算日の設定</span><button id="mClose">✕</button></div>
     <div class="form-field"><label>毎月の基本の起算日(給料日など)</label>
       <select id="periodInput">${Array.from({length:28},(_,i)=>i+1).map(d=>`<option value="${d}" ${state.monthStartDay===d?'selected':''}>${d}日</option>`).join('')}</select>
     </div>
-    <div style="font-size:11px;color:var(--text-sub);margin-bottom:10px;">例:25日を選ぶと「今月」は毎月25日〜翌月24日として集計されます</div>
-    <div class="form-field"><label>今月の開始日</label><input type="date" id="curStartInput" value="${curPeriod.start}"></div>
-    <div class="form-field"><label>来月の開始日</label><input type="date" id="nextStartInput" value="${nextPeriod.start}"></div>
-    <div style="font-size:11px;color:var(--text-sub);margin-bottom:4px;">給料日が土日祝と重なるなど、特定の月だけ開始日をずらしたいときに使います。基本の起算日と同じ日のままなら、自動でその日が使われます。</div>
+    <div style="font-size:11px;color:var(--text-sub);margin-bottom:12px;">ふだんは、この日から次の月の前日までが1つの期になります。例:25日なら「毎月25日〜翌月24日」です。</div>
+    <div style="font-size:13px;font-weight:700;margin-bottom:4px;">期ごとの開始日</div>
+    <div style="font-size:11px;color:var(--text-sub);margin-bottom:8px;">給料日が土日と重なるときなど、ずらしたい期だけ、開始日の日付を直してください。前の期の終わりは、自動で「開始日の前日」になります。過ぎた期も直せます。</div>
+    ${rows.map((r,i)=>`
+      <div class="form-field" style="margin-bottom:10px;">
+        <label>${names[r.k]}${r.k===0?'(いまの期)':''}${r.overridden?'<span style="color:#E8A33D;font-size:11px;margin-left:6px;">ずらし済み</span>':''}</label>
+        <input type="date" class="pStart" data-i="${i}" value="${r.start}">
+        <div class="pRange" data-i="${i}" style="font-size:11px;color:var(--text-sub);margin-top:2px;">${rangeText(i,r.start)}</div>
+      </div>`).join('')}
+    <div id="pErr" style="color:var(--danger);font-size:12px;min-height:16px;"></div>
     <div class="form-actions"><button class="cancel" id="fCancel">キャンセル</button><button class="save" id="fSave">保存</button></div>
   `;
   document.getElementById('modalOverlay').classList.add('show');
   document.getElementById('mClose').onclick = closeModal;
   document.getElementById('fCancel').onclick = closeModal;
+  const inputs = [...box.querySelectorAll('.pStart')];
+  const refresh = ()=>{
+    const vals = inputs.map(x=>x.value);
+    inputs.forEach((x,i)=>{
+      const nextStart = i<inputs.length-1 ? vals[i+1] : endOfLast;
+      const el = box.querySelector(`.pRange[data-i="${i}"]`);
+      if(!vals[i] || !nextStart){ el.textContent=''; return; }
+      const endD = toLocalStr(new Date(parseDateStr(nextStart).getTime()-86400000));
+      el.textContent = `${vals[i].replace(/-/g,'/')} 〜 ${endD.replace(/-/g,'/')}`;
+    });
+  };
+  inputs.forEach(x=>x.oninput = refresh);
   document.getElementById('fSave').onclick = async ()=>{
+    const err = document.getElementById('pErr');
     const v = parseInt(document.getElementById('periodInput').value)||1;
-    const curStart = document.getElementById('curStartInput').value;
-    const nextStart = document.getElementById('nextStartInput').value;
-    const curDefault = (()=>{ const [y,m]=curPeriod.key.split('-').map(Number); return toLocalStr(new Date(y, m-1, curPeriod.defaultDay)); })();
-    const nextDefault = (()=>{ const [y,m]=nextPeriod.key.split('-').map(Number); return toLocalStr(new Date(y, m-1, nextPeriod.defaultDay)); })();
+    const vals = inputs.map(x=>x.value);
+    if(vals.some(x=>!x)){ err.textContent='開始日が空の期があります'; return; }
+    for(let i=1;i<vals.length;i++){
+      if(vals[i] <= vals[i-1]){ err.textContent=`${names[rows[i].k]}の開始日は、${names[rows[i-1].k]}の開始日より後の日にしてください`; return; }
+    }
+    if(vals[vals.length-1] >= endOfLast){ err.textContent=`${names[rows[rows.length-1].k]}の開始日が、その次の期の開始日と重なっています`; return; }
     const overrides = {};
-    overrides[curPeriod.key] = (curStart && curStart!==curDefault) ? curStart : deleteField();
-    overrides[nextPeriod.key] = (nextStart && nextStart!==nextDefault) ? nextStart : deleteField();
+    rows.forEach((r,i)=>{
+      const def = toLocalStr(new Date(ky, r.m0, v));
+      const untouched = !r.overridden && vals[i]===r.start;
+      overrides[r.key] = (!untouched && vals[i]!==def) ? vals[i] : deleteField();
+    });
     await setDoc(doc(db,'users',state.uid,'meta','settings'), { monthStartDay: v, periodOverrides: overrides }, {merge:true});
+    state.sumOffset = 0; state.sumRangeManual = false;
     closeModal();
   };
 }
