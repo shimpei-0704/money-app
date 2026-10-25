@@ -677,6 +677,7 @@ function renderHome(){
         ${advOutPeriod>0?`<span>立替 ${yen(advOutPeriod)}</span><span style="color:#E8A33D;">合計 ${yen(usableNow+advOutPeriod)}</span>`:''}
       </div>
       <div style="font-size:11px;color:var(--success);text-align:right;margin-top:4px;">リセットまで あと${(()=>{ const t0=new Date(today.getFullYear(),today.getMonth(),today.getDate()); return Math.round((period.endDate-t0)/86400000); })()}日</div>
+      <div style="font-size:10px;color:var(--text-sub);text-align:right;margin-top:6px;line-height:1.5;">今期の収入だけで計算しています。前の期からの繰越は含みません。</div>
     </div>
     <div class="row3">
       <div class="card"><div class="card-label">今月の収入</div><div class="card-value" style="color:var(--success);">+${yen(monthIncome)}</div></div>
@@ -903,6 +904,16 @@ function periodResult(p, endClamp){
   exp.filter(t=>!isFixed(t)).forEach(t=>{ cats[t.category] = (cats[t.category]||0) + t.amount; });
   return { income, free, fixed, savings, budget, open, close, usable, carry, cats };
 }
+function getComparison(){
+  ensureSumRange();
+  if(state.sumRangeManual) return null;
+  const off = state.sumOffset||0;
+  const todayS = toLocalStr(new Date());
+  const selP = periodByOffset(off), prevP = periodByOffset(off-1);
+  if(todayS < selP.start) return null;
+  const isNow = todayS <= selP.end;
+  return { isNow, selP, prevP, todayS, cur: periodResult(selP, isNow ? todayS : null), prv: periodResult(prevP, null) };
+}
 function renderAnalysis(){
   ensureSumRange();
   if(state.sumRangeManual){
@@ -948,7 +959,6 @@ function renderAnalysis(){
       ${row('貯蓄', cur.savings, prv.savings, true)}
       ${row('予算', cur.budget, prv.budget, true)}
       ${row('支出(固定費を除く)', cur.free, prv.free, true)}
-      ${catIds.map(id=>row('　'+catName(id), cur.cats[id]||0, prv.cats[id]||0, true)).join('')}
       ${row(isNow?'繰越(貯蓄を除く・見込み)':'繰越(貯蓄を除く)', cur.carry, prv.carry, false)}
       ${row('使えるお金', cur.usable, prv.usable, false)}
       <div class="an-sub" style="margin-top:8px;">・%は、前の期を100としたときの割合です。<br>・「繰越」は、節約した結果、貯蓄を除いて残ったお金です。前の期は実際に残った金額、今期は固定費と予算を決めた額まで使う前提の見込みです。<br>・「貯蓄」は、実績を入力していればその金額、入力していなければ毎月の目標額です。<br>・「予算」は、予算を決めたカテゴリで使った金額です(支出に含まれます)。<br>・「使えるお金」は、いまの固定費・予算の設定額で計算しています。<br>・過去に精算した立替は、立て替えた期の中で戻ったものとして、残高を計算しています。</div>
@@ -961,15 +971,23 @@ function renderSummary(){
   const expenses = state.transactions.filter(t=>t.type==='expense' && inRange(t));
   const incomes = state.transactions.filter(t=>t.type==='income' && inRange(t));
   const incomeTotal = incomes.reduce((s,t)=>s+t.amount,0);
-  const totalsByCat = {};
-  expenses.forEach(t=>{ totalsByCat[t.category] = (totalsByCat[t.category]||0)+t.amount; });
-  const catEntries = Object.entries(totalsByCat).map(([id,amt])=>{
-    const c = state.categories.find(c=>c.id===id);
-    return { name: c?c.name:'不明', color: c?c.color:'#999', amt };
-  });
-  catEntries.sort((a,b)=>b.amt-a.amt);
+  const fixedCatS = state.categories.find(c=>c.type==='expense' && c.name==='固定費');
+  const isFixedS = t => t.fixedCostId || (fixedCatS && t.category===fixedCatS.id);
+  const allTotal = expenses.reduce((x,t)=>x+t.amount,0);
+  const cmp = getComparison();
+  const catInfo = id => { const c = state.categories.find(c=>c.id===id); return { name: c?c.name:'不明', color: c?c.color:'#999' }; };
+  let catEntries;
+  if(cmp){
+    const ids = [...new Set([...Object.keys(cmp.cur.cats), ...Object.keys(cmp.prv.cats)])];
+    catEntries = ids.map(id=>({ ...catInfo(id), amt: cmp.cur.cats[id]||0, prev: cmp.prv.cats[id]||0 }));
+  } else {
+    const totalsByCat = {};
+    expenses.filter(t=>!isFixedS(t)).forEach(t=>{ totalsByCat[t.category] = (totalsByCat[t.category]||0)+t.amount; });
+    catEntries = Object.entries(totalsByCat).map(([id,amt])=>({ ...catInfo(id), amt, prev: null }));
+  }
+  catEntries.sort((a,b)=> (b.amt-a.amt) || ((b.prev||0)-(a.prev||0)));
   const total = catEntries.reduce((s,c)=>s+c.amt,0);
-  const catMax = catEntries.length ? catEntries[0].amt : 0;
+  const catMax = catEntries.reduce((m,c)=>Math.max(m,c.amt,c.prev||0),0);
 
   let gradient = '', acc = 0;
   catEntries.forEach(c=>{
@@ -1079,16 +1097,23 @@ function renderSummary(){
     <div style="font-size:11px;color:var(--text-sub);margin-bottom:8px;">${start.replace(/-/g,'/')} 〜 ${end.replace(/-/g,'/')}</div>
     <div class="row2" style="margin-bottom:14px;">
       <div class="card"><div class="card-label">期間の収入</div><div class="card-value" style="color:var(--success)">+${yen(incomeTotal)}</div></div>
-      <div class="card"><div class="card-label">期間の支出</div><div class="card-value" style="color:var(--danger)">-${yen(total)}</div></div>
+      <div class="card"><div class="card-label">期間の支出</div><div class="card-value" style="color:var(--danger)">-${yen(allTotal)}</div></div>
     </div>
     ${renderAnalysis()}
-    ${total>0 ? `
-      <div class="card-label">支出のカテゴリ内訳</div>
-      <div class="cat-bars">${catEntries.map(c=>`
+    ${(total>0 || catEntries.some(c=>c.prev>0)) ? `
+      <div class="card-label">支出のカテゴリ内訳(固定費を除く)</div>
+      ${cmp ? '<div style="font-size:11px;color:var(--text-sub);margin-bottom:8px;">太い棒が今期、細い灰色の棒が前の期(最終)です。差は、今期から前の期を引いた金額で、プラスはオレンジ、マイナスは緑です。</div>' : ''}
+      <div class="cat-bars">${catEntries.map(c=>{
+        const d = c.amt - (c.prev||0);
+        const dcol = d>0 ? '#E8A33D' : (d<0 ? '#2E9E6B' : 'var(--text-sub)');
+        const cmpLine = cmp ? `
+          <div style="height:4px;background:var(--surface-2);border-radius:2px;overflow:hidden;margin-top:3px;"><div style="height:100%;width:${catMax>0?(c.prev>0?Math.max(1,c.prev/catMax*100):0):0}%;background:var(--text-sub);border-radius:2px;"></div></div>
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-sub);margin-top:2px;"><span>前期 ${yen(c.prev)}</span><span style="color:${dcol};">差 ${d>0?'+':''}${yen(d)}${c.prev>0?`(${Math.round(c.amt/c.prev*100)}%)`:''}</span></div>` : '';
+        return `
         <div class="cat-bar-row">
-          <div class="cat-bar-head"><span class="cat-bar-name"><span class="dot" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${c.color};margin-right:6px;"></span>${escapeHtml(c.name)}</span><span class="cat-bar-val">${yen(c.amt)}<span class="cat-bar-pct">${Math.round(c.amt/total*100)}%</span></span></div>
-          <div class="cat-bar-track"><div class="cat-bar-fill" style="width:${catMax>0?Math.max(1,c.amt/catMax*100):0}%;background:${c.color};"></div></div>
-        </div>`).join('')}</div>
+          <div class="cat-bar-head"><span class="cat-bar-name"><span class="dot" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${c.color};margin-right:6px;"></span>${escapeHtml(c.name)}</span><span class="cat-bar-val">${yen(c.amt)}<span class="cat-bar-pct">${total>0?Math.round(c.amt/total*100):0}%</span></span></div>
+          <div class="cat-bar-track"><div class="cat-bar-fill" style="width:${catMax>0?(c.amt>0?Math.max(1,c.amt/catMax*100):0):0}%;background:${c.color};"></div></div>${cmpLine}
+        </div>`; }).join('')}</div>
     ` : ''}
     <div class="card-label">期間内の収支推移</div>
     <div style="font-size:11px;color:var(--text-sub);margin-bottom:6px;">${expenseOnly ? '期間ごとの支出合計を棒グラフにしたものです。棒が長いほど支出が多いことを表します。' : '「収入−支出」を棒グラフにしたものです。緑の棒はその期間が収入超過(お金が増えた)、赤の棒は支出超過(お金が減った)で、棒が長いほど金額が大きいことを表します。'}</div>
