@@ -780,12 +780,12 @@ function renderCalendar(){
     </div>
     <div class="card-label">集計期間</div>
     <div class="cal-header">
-      <button id="calPrev">‹</button>
+      <button id="calPrev" style="${state.sumRangeManual?'visibility:hidden;':''}">‹</button>
       <button id="rangeBtn"><span>${start.replace(/-/g,'/')} 〜 ${end.replace(/-/g,'/')}</span><span>📅</span></button>
-      <button id="calNext">›</button>
+      <button id="calNext" style="${state.sumRangeManual?'visibility:hidden;':''}">›</button>
     </div>
+    <div style="text-align:center;font-size:12px;color:var(--text-sub);margin:-6px 0 8px;">${(()=>{ if(state.sumRangeManual) return '指定した期間'; const o=state.sumOffset||0; return o===0?'今期':o===-1?'前期':o===-2?'前々期':o===1?'来期':(o<0?(-o)+'期前':o+'期先'); })()}</div>
     ${isDefault ? '' : '<div style="text-align:center;margin:-4px 0 10px;"><button class="link-btn" id="calReset">今期(起算日の期間)に戻す</button></div>'}
-    <div id="rangeCalWrap">${renderRangeCalendar()}</div>
     <div class="cal-grid">
       ${['月','火','水','木','金','土','日'].map(d=>`<div class="cal-dow">${d}</div>`).join('')}
       ${cells}
@@ -1379,19 +1379,7 @@ function attachScreenEvents(){
     document.querySelectorAll('.cal-day[data-date]').forEach(cell=>{
       cell.addEventListener('click', ()=>openDayModal(cell.dataset.date));
     });
-    document.getElementById('rangeBtn').onclick = ()=>{
-      const w = document.getElementById('rangeCalWrap');
-      const opening = getComputedStyle(w).display==='none';
-      if(opening){
-        const sd = parseDateStr(state.sumRange.start);
-        state.calMonth = new Date(sd.getFullYear(), sd.getMonth(), 1);
-        w.innerHTML = renderRangeCalendar();
-      }
-      w.style.display = opening ? 'block' : 'none';
-      state.rangePicking = 'start';
-      attachRangeCalEvents();
-    };
-    attachRangeCalEvents();
+    document.getElementById('rangeBtn').onclick = openSumRangeForm;
     document.querySelectorAll('.trend-gran-btn[data-gran]').forEach(b=>{
       b.onclick = ()=>{ state.trendGranularity = b.dataset.gran; state.trendSelectedIdx = null; render(); };
     });
@@ -1541,6 +1529,53 @@ function attachScreenEvents(){
   }
 }
 
+function openSumRangeForm(){
+  ensureSumRange();
+  const box = document.getElementById('modalBox');
+  const cur = state.sumRange;
+  const now = new Date();
+  const monthStart = toLocalStr(new Date(now.getFullYear(), now.getMonth(), 1));
+  const monthEnd = toLocalStr(new Date(now.getFullYear(), now.getMonth()+1, 0));
+  const fmt = r => `${r.start.replace(/-/g,'/')} 〜 ${r.end.replace(/-/g,'/')}`;
+  const quick = [
+    ['今期', periodByOffset(0), ()=>{ state.sumRangeManual=false; state.sumOffset=0; }],
+    ['前期', periodByOffset(-1), ()=>{ state.sumRangeManual=false; state.sumOffset=-1; }],
+    ['前々期', periodByOffset(-2), ()=>{ state.sumRangeManual=false; state.sumOffset=-2; }],
+    ['今月(1日〜月末)', {start:monthStart,end:monthEnd}, ()=>{ state.sumRangeManual=true; state.sumRange={start:monthStart,end:monthEnd}; }]
+  ];
+  box.innerHTML = `
+    <div class="mh"><span>集計する期間を選ぶ</span><button id="mClose">✕</button></div>
+    <div style="font-size:12px;color:var(--text-sub);margin-bottom:6px;">よく使う期間</div>
+    ${quick.map((q,i)=>`<button class="list-row" data-q="${i}" style="width:100%;cursor:pointer;background:none;border:none;border-bottom:1px solid var(--border,#333);color:var(--text);text-align:left;"><span>${q[0]}</span><span style="color:var(--text-sub);font-size:12px;">${fmt(q[1])}</span></button>`).join('')}
+    <div style="font-size:12px;color:var(--text-sub);margin:14px 0 6px;">自分で期間を指定する</div>
+    <div class="form-field"><label>開始日</label><input type="date" id="srStart" value="${cur.start}"></div>
+    <div class="form-field"><label>終了日</label><input type="date" id="srEnd" value="${cur.end}"></div>
+    <div id="srPreview" style="font-size:13px;font-weight:700;text-align:center;margin-bottom:6px;"></div>
+    <div id="srErr" style="color:var(--danger);font-size:12px;min-height:16px;"></div>
+    <div class="form-actions"><button class="cancel" id="fCancel">キャンセル</button><button class="save" id="fSave">この期間にする</button></div>
+  `;
+  document.getElementById('modalOverlay').classList.add('show');
+  document.getElementById('mClose').onclick = closeModal;
+  document.getElementById('fCancel').onclick = closeModal;
+  box.querySelectorAll('[data-q]').forEach(b=>{
+    b.onclick = ()=>{ quick[+b.dataset.q][2](); state.trendSelectedIdx = null; closeModal(); render(); };
+  });
+  const sEl = document.getElementById('srStart'), eEl = document.getElementById('srEnd');
+  const pv = ()=>{
+    const s_=sEl.value, e_=eEl.value, p=document.getElementById('srPreview');
+    if(!s_||!e_||s_>e_){ p.textContent=''; return; }
+    const days = Math.round((parseDateStr(e_)-parseDateStr(s_))/86400000)+1;
+    p.textContent = `${s_.replace(/-/g,'/')} 〜 ${e_.replace(/-/g,'/')}(${days}日間)`;
+  };
+  sEl.oninput = pv; eEl.oninput = pv; pv();
+  document.getElementById('fSave').onclick = ()=>{
+    const s_=sEl.value, e_=eEl.value;
+    if(!s_||!e_){ document.getElementById('srErr').textContent='開始日と終了日を入力してください'; return; }
+    if(s_>e_){ document.getElementById('srErr').textContent='終了日は開始日より後の日にしてください'; return; }
+    state.sumRangeManual = true; state.sumRange = { start:s_, end:e_ }; state.trendSelectedIdx = null;
+    closeModal(); render();
+  };
+}
 function attachRangeCalEvents(){
   const prev = document.getElementById('rcPrev'), next = document.getElementById('rcNext');
   if(prev) prev.onclick = ()=>{ state.calMonth = new Date(state.calMonth.getFullYear(), state.calMonth.getMonth()-1, 1); document.getElementById('rangeCalWrap').innerHTML = renderRangeCalendar(); attachRangeCalEvents(); };
