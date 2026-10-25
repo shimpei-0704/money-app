@@ -960,10 +960,10 @@ function renderAnalysis(){
       ${row('固定費', cur.fixed, prv.fixed, true)}
       ${row('貯蓄', cur.savings, prv.savings, true)}
       ${row('予算', cur.budget, prv.budget, true)}
-      ${row('支出(固定費を除く)', cur.free, prv.free, true)}
-      ${row(isNow?'繰越(貯蓄を除く・見込み)':'繰越(貯蓄を除く)', cur.carry, prv.carry, false)}
+      ${row('支出<br>(固定費を除く)', cur.free, prv.free, true)}
+      ${row(isNow?'繰越<br>(貯蓄を除く・見込み)':'繰越<br>(貯蓄を除く)', cur.carry, prv.carry, false)}
       ${row('使えるお金', cur.usable, prv.usable, false)}
-      <div class="an-sub" style="margin-top:8px;">・%は、前の期を100としたときの割合です。<br>・「繰越」は、節約した結果、貯蓄を除いて残ったお金です。前の期は実際に残った金額、今期は固定費と予算を決めた額まで使う前提の見込みです。<br>・「貯蓄」は、実績を入力していればその金額、入力していなければ毎月の目標額です。<br>・「予算」は、予算を決めたカテゴリで使った金額です(支出に含まれます)。<br>・「使えるお金」は、いまの固定費・予算の設定額で計算しています。<br>・過去に精算した立替は、立て替えた期の中で戻ったものとして、残高を計算しています。</div>
+      <div class="an-sub" style="margin-top:8px;">・「繰越」は、節約した結果、貯蓄を除いて残ったお金です。前の期は実際に残った金額、今期は固定費と予算を決めた額まで使う前提の見込みです。<br>・「貯蓄」は、実績を入力していればその金額、入力していなければ毎月の目標額です。<br>・「予算」は、予算を決めたカテゴリで使った金額です(支出に含まれます)。<br>・「使えるお金」は、いまの固定費・予算の設定額で計算しています。<br>・過去に精算した立替は、立て替えた期の中で戻ったものとして、残高を計算しています。</div>
     </div>`;
 }
 function renderSummary(){
