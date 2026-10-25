@@ -94,6 +94,7 @@
   .days-left.soon{ color:var(--danger); }
 
   /* ---- Calendar ---- */
+  .an-sub{ font-size:11px; color:var(--text-sub); padding-bottom:6px; line-height:1.6; }
   .cal-header{ display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
   .cal-header button{ background:none; border:none; font-size:20px; color:var(--text); cursor:pointer; padding:4px 10px; }
   .cal-header .ym{ font-size:16px; font-weight:700; }
@@ -838,78 +839,102 @@ function renderInput(){
 
 /* ---------- 集計 ---------- */
 
-function renderAnalysis(){
-  ensureSumRange();
-  const {start,end} = state.sumRange;
+function advSettleDate(a){
+  if(a.settledDate) return a.settledDate;
+  const p = getPeriodForDate(parseDateStr(a.date));
+  return shiftDateStr(p.end, -1);
+}
+function totalBalanceBefore(dateStr){
+  let sum = 0;
+  state.accounts.forEach(acc=>{
+    const id = acc.id;
+    const init = acc.initialBalance||0;
+    const tx = state.transactions.filter(t=>t.accountId===id && t.date<dateStr).reduce((x,t)=>x+(t.type==='income'?t.amount:-t.amount),0);
+    const out = state.advances.filter(a=>a.accountId===id && a.date<dateStr).reduce((x,a)=>x+a.amount,0);
+    const back = state.advances.filter(a=>a.settled && advReturnAccount(a)===id && advSettleDate(a)<dateStr).reduce((x,a)=>x+a.amount,0);
+    sum += init + tx - out + back;
+  });
+  return sum;
+}
+function periodResult(p, endClamp){
   const fixedCat = state.categories.find(c=>c.type==='expense' && c.name==='固定費');
   const fixedCatId = fixedCat ? fixedCat.id : null;
-  const isFree = t => t.type==='expense' && !t.fixedCostId && t.category!==fixedCatId;
-  const free = state.transactions.filter(isFree);
-  const dayMs = 86400000;
-  const total = Math.round((parseDateStr(end)-parseDateStr(start))/dayMs)+1;
-  const todayStr_ = toLocalStr(new Date());
-  let elapsed = todayStr_>=end ? total : (todayStr_<start ? 0 : Math.round((parseDateStr(todayStr_)-parseDateStr(start))/dayMs)+1);
-  if(elapsed===0) return '';
-  const remaining = total - elapsed;
-  const curEnd = shiftDateStr(start, elapsed-1);
-  const prevStart = shiftDateStr(start, -total), prevEnd = shiftDateStr(prevStart, elapsed-1);
-  const cur = free.filter(t=>t.date>=start && t.date<=curEnd);
-  const prev = free.filter(t=>t.date>=prevStart && t.date<=prevEnd);
-  const curSum = cur.reduce((s,t)=>s+t.amount,0);
-  const prevSum = prev.reduce((s,t)=>s+t.amount,0);
-  const diff = curSum - prevSum;
-  const avg = curSum/elapsed;
-  const forecast = Math.round(avg*total);
-  const sgn = n => (n>0?'+':'') + yen(n);
+  const E = endClamp && endClamp<p.end ? endClamp : p.end;
+  const inR = t => t.date>=p.start && t.date<=E;
+  const tx = state.transactions.filter(inR);
+  const exp = tx.filter(t=>t.type==='expense');
+  const isFixed = t => t.fixedCostId || t.category===fixedCatId;
+  const income = tx.filter(t=>t.type==='income').reduce((x,t)=>x+t.amount,0);
+  const fixed = exp.filter(isFixed).reduce((x,t)=>x+t.amount,0);
+  const free = exp.filter(t=>!isFixed(t)).reduce((x,t)=>x+t.amount,0);
+  const budCats = new Set(state.budgets.map(b=>b.categoryId));
+  const budget = exp.filter(t=>!isFixed(t) && budCats.has(t.category)).reduce((x,t)=>x+t.amount,0);
+  const savings = state.goals.reduce((x,g)=> x + Object.entries(g.contributions||{}).filter(([k])=>k>=p.start && k<=p.end).reduce((y,[,v])=>y+contribAmt(v),0), 0);
+  const open = totalBalanceBefore(p.start);
+  const close = totalBalanceBefore(shiftDateStr(E,1));
+  // 使えるお金(ホームと同じ計算)
+  const fixedCostsTotal = state.fixedCosts.reduce((x,f)=>x+f.amount,0);
+  const budgetTotal = state.budgets.reduce((x,b)=>x+b.amount,0);
+  const reserved = state.goals.reduce((sum,g)=>{
+    if(!(g.monthlyTarget>0)) return sum;
+    const raw = g.contributions ? g.contributions[p.start] : undefined;
+    return sum + (raw!=null ? contribAmt(raw) : g.monthlyTarget);
+  },0);
+  const allExp = exp.reduce((x,t)=>x+t.amount,0);
+  const fixedCatExp = exp.filter(t=>t.category===fixedCatId).reduce((x,t)=>x+t.amount,0);
+  const spentBud = exp.filter(t=>budCats.has(t.category)).reduce((x,t)=>x+t.amount,0);
+  const extra = allExp - fixedCatExp - spentBud;
+  const advOut = state.advances.filter(a=>!a.settled && a.accountId && a.date>=p.start && a.date<=E).reduce((x,a)=>x+a.amount,0);
+  const usable = income - fixedCostsTotal - budgetTotal - reserved - extra - advOut;
+  return { income, free, fixed, savings, budget, open, close, usable };
+}
+function renderAnalysis(){
+  ensureSumRange();
+  if(state.sumRangeManual){
+    return `<div class="card-label">前期との比較</div><div class="card" style="margin-bottom:14px;"><div class="an-sub">期間を自分で指定しているため、前期との比較は出ません。「今期に戻す」を押すと表示されます。</div></div>`;
+  }
+  const off = state.sumOffset||0;
+  const todayS = toLocalStr(new Date());
+  const selP = periodByOffset(off), prevP = periodByOffset(off-1);
+  if(todayS < selP.start){
+    return `<div class="card-label">前期との比較</div><div class="card" style="margin-bottom:14px;"><div class="an-sub">この期はまだ始まっていません。</div></div>`;
+  }
+  const isNow = todayS <= selP.end;
+  const cur = periodResult(selP, isNow ? todayS : null);
+  const prv = periodResult(prevP, null);
   const OR = '#E8A33D', GR = '#2E9E6B';
   const dcol = d => d>0 ? OR : (d<0 ? GR : 'var(--text-sub)');
-  // 固定費・貯蓄・予算
-  const allExp = state.transactions.filter(t=>t.type==='expense');
-  const isFixed = t => t.fixedCostId || t.category===fixedCatId;
-  const budgetCats2 = new Set(state.budgets.map(b=>b.categoryId));
-  const sumIn = (arr,a,b)=> arr.filter(t=>t.date>=a && t.date<=b).reduce((x,t)=>x+t.amount,0);
-  const fixedCur = sumIn(allExp.filter(isFixed), start, curEnd), fixedPrev = sumIn(allExp.filter(isFixed), prevStart, prevEnd);
-  const budCur = sumIn(allExp.filter(t=>!isFixed(t) && budgetCats2.has(t.category)), start, curEnd);
-  const budPrev = sumIn(allExp.filter(t=>!isFixed(t) && budgetCats2.has(t.category)), prevStart, prevEnd);
-  const savIn = (a,b)=> state.goals.reduce((x,g)=> x + Object.entries(g.contributions||{}).filter(([k])=>k>=a && k<=b).reduce((y,[,v])=>y+contribAmt(v),0), 0);
-  const savCur = savIn(start,end), savPrev = savIn(prevStart, shiftDateStr(start,-1));
-  const cmpRows = (label, c, p) => `<div class="an-row"><span>${label}</span><b>${yen(c)}</b></div>
-      <div class="an-row"><span>前期との比較</span><b style="color:${dcol(c-p)};">${sgn(c-p)}</b></div>`;
-  // カテゴリ別の前期との差
-  const catName = id => { const c = state.categories.find(c=>c.id===id); return c?c.name:'不明'; };
-  const cm = {}, pm = {};
-  cur.forEach(t=>{ cm[t.category]=(cm[t.category]||0)+t.amount; });
-  prev.forEach(t=>{ pm[t.category]=(pm[t.category]||0)+t.amount; });
-  const diffs = [...new Set([...Object.keys(cm),...Object.keys(pm)])].map(id=>({name:catName(id), d:(cm[id]||0)-(pm[id]||0)})).filter(x=>x.d!==0);
-  const ups = diffs.filter(x=>x.d>0).sort((a,b)=>b.d-a.d).slice(0,3);
-  const downs = diffs.filter(x=>x.d<0).sort((a,b)=>a.d-b.d).slice(0,3);
-  // 曜日別
-  const dow = [0,0,0,0,0,0,0];
-  cur.forEach(t=>{ dow[(parseDateStr(t.date).getDay()+6)%7]+=t.amount; });
-  const dowMax = Math.max(...dow);
-  const dn = ['月','火','水','木','金','土','日'];
-  const maxIdx = dowMax>0 ? dow.indexOf(dowMax) : -1;
+  const sgn = n => (n>0?'+':'') + yen(n);
+  const f = d => d.replace(/-/g,'/').slice(5);
+  const row = (label, c, p, pct) => {
+    const d = c-p;
+    const pc = pct && p>0 ? `<div style="font-size:10px;color:var(--text-sub);">${Math.round(c/p*100)}%</div>` : '';
+    return `<div style="display:grid;grid-template-columns:1.25fr 1fr 1fr 1fr;gap:4px;align-items:start;padding:6px 0;border-bottom:1px solid var(--surface-2);font-size:12px;">
+      <div style="color:var(--text-sub);">${label}</div>
+      <div style="text-align:right;">${yen(p)}</div>
+      <div style="text-align:right;">${yen(c)}</div>
+      <div style="text-align:right;color:${dcol(d)};">${sgn(d)}${pc}</div>
+    </div>`;
+  };
   return `
-    <style>.an-row{display:flex;justify-content:space-between;align-items:baseline;padding:5px 0;font-size:13px;}.an-sub{font-size:11px;color:var(--text-sub);padding-bottom:6px;}.an-h{font-size:12px;color:var(--text-sub);margin:12px 0 4px;}</style>
-    <div class="card-label">支出の分析</div>
+    <div class="card-label">前期との比較</div>
     <div class="card" style="margin-bottom:14px;">
-      <div class="an-sub">固定費・貯蓄・立替・振替を除いた支出です。今日までの${elapsed}日間(${start.slice(5).replace('-','/')}〜${curEnd.slice(5).replace('-','/')})を、前期の同じ日数と比べています。</div>
-      <div class="an-row"><span>支出合計(固定費を除く)</span><b>${yen(curSum)}</b></div>
-      <div class="an-row"><span>前期との比較</span><b style="color:${dcol(diff)};">${sgn(diff)}</b></div>
-      <div class="an-sub">前期の同じ日数は${yen(prevSum)}。プラスは前期より多く使っている(オレンジ)、マイナスは少ない(緑)です。</div>
-      <div class="an-row"><span>1日あたりの平均</span><b>${yen(Math.round(avg))}</b></div>
-      <div class="an-h">固定費・貯蓄・予算</div>
-      ${cmpRows('固定費 合計', fixedCur, fixedPrev)}
-      ${cmpRows('貯蓄 合計', savCur, savPrev)}
-      ${cmpRows('予算 合計(予算カテゴリの支出)', budCur, budPrev)}
-      <div class="an-sub">貯蓄は、期間内に積み立てた貯蓄実績の合計です。</div>
-      <div class="an-h">前期より増えたカテゴリ</div>
-      ${ups.length?ups.map(x=>`<div class="an-row"><span>${escapeHtml(x.name)}</span><b style="color:${OR};">${sgn(x.d)}</b></div>`).join(''):'<div class="an-sub">なし</div>'}
-      <div class="an-h">前期より減ったカテゴリ</div>
-      ${downs.length?downs.map(x=>`<div class="an-row"><span>${escapeHtml(x.name)}</span><b style="color:${GR};">${sgn(x.d)}</b></div>`).join(''):'<div class="an-sub">なし</div>'}
-      <div class="an-h">曜日別の支出</div>
-      <div class="an-sub">今期(今日まで)に使った金額を、曜日ごとに合計したものです。たとえば「月」は、期間内のすべての月曜日の支出の合計です。</div>
-      ${dow.map((v,i)=>`<div style="display:flex;align-items:center;gap:8px;font-size:12px;padding:2px 0;"><span style="width:16px;">${dn[i]}</span><div style="flex:1;background:var(--surface-2);border-radius:4px;height:10px;"><div style="width:${dowMax>0?v/dowMax*100:0}%;height:10px;border-radius:4px;background:${i===maxIdx?OR:'var(--text-sub)'};"></div></div><span style="width:80px;text-align:right;">${yen(v)}</span></div>`).join('')}
+      <div class="an-sub">左は前の期の最終結果(固定)、右は${isNow?'今日までの累計':'その期の最終結果'}です。差は、右から左を引いた金額です。プラスはオレンジ(前より多い)、マイナスは緑(前より少ない)です。</div>
+      <div style="display:grid;grid-template-columns:1.25fr 1fr 1fr 1fr;gap:4px;font-size:11px;color:var(--text-sub);padding-bottom:4px;">
+        <div></div>
+        <div style="text-align:right;">前の期<br>${f(prevP.start)}〜${f(prevP.end)}</div>
+        <div style="text-align:right;">${isNow?'今期':'この期'}<br>${f(selP.start)}〜${f(isNow?todayS:selP.end)}</div>
+        <div style="text-align:right;">差(%)</div>
+      </div>
+      ${row('期の初めの繰越', cur.open, prv.open, false)}
+      ${row('収入', cur.income, prv.income, true)}
+      ${row('支出(固定費を除く)', cur.free, prv.free, true)}
+      ${row('固定費', cur.fixed, prv.fixed, true)}
+      ${row('貯蓄', cur.savings, prv.savings, true)}
+      ${row('予算', cur.budget, prv.budget, true)}
+      ${row(isNow?'いまの残高':'期の終わりの残高', cur.close, prv.close, false)}
+      ${row('使えるお金', cur.usable, prv.usable, false)}
+      <div class="an-sub" style="margin-top:8px;">・%は、前の期を100としたときの割合です。<br>・「予算」は、予算を決めたカテゴリで使った金額です(支出に含まれます)。<br>・「使えるお金」は、いまの固定費・予算の設定額で計算しています。<br>・過去に精算した立替は、立て替えた期の中で戻ったものとして、残高を計算しています。</div>
     </div>`;
 }
 function renderSummary(){
@@ -2267,6 +2292,7 @@ function openAdvanceForm(existing){
       memo: document.getElementById('aMemo').value.trim(),
       accountId: document.getElementById('aAccount').value,
       settled: document.getElementById('aSettled').checked,
+      settledDate: document.getElementById('aSettled').checked ? (existing&&existing.settled ? (existing.settledDate||'') : todayStr()) : '',
       settleAccountId: document.getElementById('aSettled').checked ? ((existing&&existing.settleAccountId) || (savingsAccount()||{}).id || document.getElementById('aAccount').value) : '',
       receiptImg: receiptData || null
     };
