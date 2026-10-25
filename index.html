@@ -875,7 +875,6 @@ function periodResult(p, endClamp){
   const free = exp.filter(t=>!isFixed(t)).reduce((x,t)=>x+t.amount,0);
   const budCats = new Set(state.budgets.map(b=>b.categoryId));
   const budget = exp.filter(t=>!isFixed(t) && budCats.has(t.category)).reduce((x,t)=>x+t.amount,0);
-  const savings = state.goals.reduce((x,g)=> x + Object.entries(g.contributions||{}).filter(([k])=>k>=p.start && k<=p.end).reduce((y,[,v])=>y+contribAmt(v),0), 0);
   const open = totalBalanceBefore(p.start) - priorSavings(p.start);
   const close = totalBalanceBefore(shiftDateStr(E,1));
   // 使えるお金(ホームと同じ計算)
@@ -892,7 +891,17 @@ function periodResult(p, endClamp){
   const extra = allExp - fixedCatExp - spentBud;
   const advOut = state.advances.filter(a=>!a.settled && a.accountId && a.date>=p.start && a.date<=E).reduce((x,a)=>x+a.amount,0);
   const usable = income - fixedCostsTotal - budgetTotal - reserved - extra - advOut;
-  return { income, free, fixed, savings, budget, open, close, usable };
+  const savings = reserved;
+  let carry;
+  if(endClamp){
+    const allB = state.accounts.reduce((x,a)=>x+accountBalance(a.id),0);
+    carry = allB + allExp - fixedCostsTotal - budgetTotal - reserved - extra - priorSavings(p.start);
+  } else {
+    carry = close - priorSavings(p.start) - reserved;
+  }
+  const cats = {};
+  exp.filter(t=>!isFixed(t)).forEach(t=>{ cats[t.category] = (cats[t.category]||0) + t.amount; });
+  return { income, free, fixed, savings, budget, open, close, usable, carry, cats };
 }
 function renderAnalysis(){
   ensureSumRange();
@@ -908,6 +917,8 @@ function renderAnalysis(){
   const isNow = todayS <= selP.end;
   const cur = periodResult(selP, isNow ? todayS : null);
   const prv = periodResult(prevP, null);
+  const catName = id => { const c = state.categories.find(c=>c.id===id); return c?c.name:'不明'; };
+  const catIds = [...new Set([...Object.keys(cur.cats),...Object.keys(prv.cats)])].sort((x,y)=>((cur.cats[y]||0)-(cur.cats[x]||0)) || ((prv.cats[y]||0)-(prv.cats[x]||0)));
   const OR = '#E8A33D', GR = '#2E9E6B';
   const dcol = d => d>0 ? OR : (d<0 ? GR : 'var(--text-sub)');
   const sgn = n => (n>0?'+':'') + yen(n);
@@ -932,15 +943,15 @@ function renderAnalysis(){
         <div style="text-align:right;">${isNow?'今期':'この期'}<br>${f(selP.start)}〜${f(isNow?todayS:selP.end)}</div>
         <div style="text-align:right;">差(%)</div>
       </div>
-      ${row('期の初めの繰越(貯蓄を除く)', cur.open, prv.open, false)}
       ${row('収入', cur.income, prv.income, true)}
-      ${row('支出(固定費を除く)', cur.free, prv.free, true)}
       ${row('固定費', cur.fixed, prv.fixed, true)}
       ${row('貯蓄', cur.savings, prv.savings, true)}
       ${row('予算', cur.budget, prv.budget, true)}
-      ${row(isNow?'いまの口座残高(貯蓄を含む)':'期の終わりの口座残高(貯蓄を含む)', cur.close, prv.close, false)}
+      ${row('支出(固定費を除く)', cur.free, prv.free, true)}
+      ${catIds.map(id=>row('　'+catName(id), cur.cats[id]||0, prv.cats[id]||0, true)).join('')}
+      ${row(isNow?'繰越(貯蓄を除く・見込み)':'繰越(貯蓄を除く)', cur.carry, prv.carry, false)}
       ${row('使えるお金', cur.usable, prv.usable, false)}
-      <div class="an-sub" style="margin-top:8px;">・%は、前の期を100としたときの割合です。<br>・「繰越」は、期の初めまでに積み上げた貯蓄実績を除いています。<br>・「予算」は、予算を決めたカテゴリで使った金額です(支出に含まれます)。<br>・「使えるお金」は、いまの固定費・予算の設定額で計算しています。<br>・過去に精算した立替は、立て替えた期の中で戻ったものとして、残高を計算しています。</div>
+      <div class="an-sub" style="margin-top:8px;">・%は、前の期を100としたときの割合です。<br>・「繰越」は、節約した結果、貯蓄を除いて残ったお金です。前の期は実際に残った金額、今期は固定費と予算を決めた額まで使う前提の見込みです。<br>・「貯蓄」は、実績を入力していればその金額、入力していなければ毎月の目標額です。<br>・「予算」は、予算を決めたカテゴリで使った金額です(支出に含まれます)。<br>・「使えるお金」は、いまの固定費・予算の設定額で計算しています。<br>・過去に精算した立替は、立て替えた期の中で戻ったものとして、残高を計算しています。</div>
     </div>`;
 }
 function renderSummary(){
