@@ -631,7 +631,7 @@ function renderHome(){
   const advOutAll = unsettledAdv.filter(a=>a.accountId).reduce((s,a)=>s+a.amount,0);
   const advOutPeriod = unsettledAdv.filter(a=>a.accountId && a.date>=period.start && a.date<period.end).reduce((s,a)=>s+a.amount,0);
   const usableNow = monthIncome - fixedCostsTotal - budgetTotal - reservedSavings - extraExpense - advOutPeriod;
-  const carryover = allBalance + monthExpense - fixedCostsTotal - budgetTotal - reservedSavings - extraExpense;
+  const carryover = allBalance + monthExpense - fixedCostsTotal - budgetTotal - reservedSavings - extraExpense - priorSavings(period.start);
   const advTotal = unsettledAdv.reduce((s,a)=>s+a.amount,0);
 
   return `
@@ -839,6 +839,12 @@ function renderInput(){
 
 /* ---------- 集計 ---------- */
 
+function priorSavings(startStr){
+  return state.goals.reduce((x,g)=>{
+    if(g.monthlyTarget>0) return x + Object.entries(g.contributions||{}).filter(([k])=>k<startStr).reduce((y,[,v])=>y+contribAmt(v),0);
+    return x + (g.allocatedAmount||0);
+  },0);
+}
 function advSettleDate(a){
   if(a.settledDate) return a.settledDate;
   const p = getPeriodForDate(parseDateStr(a.date));
@@ -870,7 +876,7 @@ function periodResult(p, endClamp){
   const budCats = new Set(state.budgets.map(b=>b.categoryId));
   const budget = exp.filter(t=>!isFixed(t) && budCats.has(t.category)).reduce((x,t)=>x+t.amount,0);
   const savings = state.goals.reduce((x,g)=> x + Object.entries(g.contributions||{}).filter(([k])=>k>=p.start && k<=p.end).reduce((y,[,v])=>y+contribAmt(v),0), 0);
-  const open = totalBalanceBefore(p.start);
+  const open = totalBalanceBefore(p.start) - priorSavings(p.start);
   const close = totalBalanceBefore(shiftDateStr(E,1));
   // 使えるお金(ホームと同じ計算)
   const fixedCostsTotal = state.fixedCosts.reduce((x,f)=>x+f.amount,0);
@@ -926,15 +932,15 @@ function renderAnalysis(){
         <div style="text-align:right;">${isNow?'今期':'この期'}<br>${f(selP.start)}〜${f(isNow?todayS:selP.end)}</div>
         <div style="text-align:right;">差(%)</div>
       </div>
-      ${row('期の初めの繰越', cur.open, prv.open, false)}
+      ${row('期の初めの繰越(貯蓄を除く)', cur.open, prv.open, false)}
       ${row('収入', cur.income, prv.income, true)}
       ${row('支出(固定費を除く)', cur.free, prv.free, true)}
       ${row('固定費', cur.fixed, prv.fixed, true)}
       ${row('貯蓄', cur.savings, prv.savings, true)}
       ${row('予算', cur.budget, prv.budget, true)}
-      ${row(isNow?'いまの残高':'期の終わりの残高', cur.close, prv.close, false)}
+      ${row(isNow?'いまの口座残高(貯蓄を含む)':'期の終わりの口座残高(貯蓄を含む)', cur.close, prv.close, false)}
       ${row('使えるお金', cur.usable, prv.usable, false)}
-      <div class="an-sub" style="margin-top:8px;">・%は、前の期を100としたときの割合です。<br>・「予算」は、予算を決めたカテゴリで使った金額です(支出に含まれます)。<br>・「使えるお金」は、いまの固定費・予算の設定額で計算しています。<br>・過去に精算した立替は、立て替えた期の中で戻ったものとして、残高を計算しています。</div>
+      <div class="an-sub" style="margin-top:8px;">・%は、前の期を100としたときの割合です。<br>・「繰越」は、期の初めまでに積み上げた貯蓄実績を除いています。<br>・「予算」は、予算を決めたカテゴリで使った金額です(支出に含まれます)。<br>・「使えるお金」は、いまの固定費・予算の設定額で計算しています。<br>・過去に精算した立替は、立て替えた期の中で戻ったものとして、残高を計算しています。</div>
     </div>`;
 }
 function renderSummary(){
