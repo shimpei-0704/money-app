@@ -632,6 +632,7 @@ function renderHome(){
   const advOutPeriod = unsettledAdv.filter(a=>a.accountId && a.date>=period.start && a.date<period.end).reduce((s,a)=>s+a.amount,0);
   const usableNow = monthIncome - fixedCostsTotal - budgetTotal - reservedSavings - extraExpense - advOutPeriod;
   const carryover = allBalance + monthExpense - fixedCostsTotal - budgetTotal - reservedSavings - extraExpense - priorSavings(period.start);
+  const periodCarry = carryover - (totalBalanceBefore(period.start) - priorSavings(period.start));
   const advTotal = unsettledAdv.reduce((s,a)=>s+a.amount,0);
 
   return `
@@ -642,7 +643,8 @@ function renderHome(){
         <button class="link-btn" id="openTransferBtn">振替する</button>
       </div>
       <div class="card-value" style="text-align:right;">${yen(Math.max(0,allBalance))}</div>
-      <div style="font-size:11px;color:var(--text-sub);margin-top:4px;display:flex;justify-content:flex-end;flex-wrap:wrap;gap:4px 16px;"><span>繰越:${yen(carryover)}</span>${advOutAll>0?`<span>立替:${yen(advOutAll)}</span><span style="color:#E8A33D;">実繰越:${yen(carryover+advOutAll)}</span>`:''}</div>
+      <div style="font-size:11px;color:var(--text-sub);margin-top:4px;display:flex;justify-content:flex-end;flex-wrap:wrap;gap:4px 16px;"><span>繰越:累計 ${yen(carryover)}</span><span>今期 ${periodCarry>0?'+':''}${yen(periodCarry)}</span></div>
+      ${advOutAll>0?`<div style="font-size:11px;color:var(--text-sub);margin-top:2px;display:flex;justify-content:flex-end;flex-wrap:wrap;gap:4px 16px;"><span>立替:${yen(advOutAll)}</span><span style="color:#E8A33D;">実繰越:${yen(carryover+advOutAll)}</span></div>`:''}
       ${accountBalances.length ? `
       <div class="account-grid">
         ${accountBalances.map((a,i)=>`
