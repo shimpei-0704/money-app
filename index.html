@@ -600,7 +600,7 @@ function renderHome(){
     let level = '';
     if(need>0 && a.balance < need){
       const isSav = savAcc && a.id===savAcc.id;
-      const adv = isSav ? unsettledAll : 0;
+      const adv = isSav ? state.advances.filter(x=>!x.settled && x.accountId===savAcc.id).reduce((q,x)=>q+x.amount,0) : 0;
       const msg = `${a.name} 貯蓄過不足 ${yen(a.balance-need)}(立替未精算${yen(adv)}) 清算後 ${yen(a.balance+adv)}`;
       if(adv>0 && a.balance + adv >= need){ level = 'orange'; }
       else { level = 'red'; }
@@ -704,6 +704,16 @@ function renderHome(){
         <div class="card-label" style="margin-bottom:0;">固定費の支払い予定</div>
         <div style="font-size:12px;color:var(--text-sub);">合計 ${yen(fixedSorted.reduce((s,f)=>s+f.amount,0))}</div>
       </div>
+      ${(()=>{
+        const pp = periodByOffset(-1);
+        const prev = { start: pp.start, end: period.start };
+        const miss = state.fixedCosts.filter(f=>!isFixedCostLogged(f, prev));
+        if(!miss.length || !state.transactions.some(t=>t.date>=prev.start && t.date<prev.end)) return '';
+        return `<div style="background:var(--danger-bg);border-radius:8px;padding:8px 10px;margin:6px 0 10px;">
+          <div style="font-size:12px;color:var(--danger);margin-bottom:6px;">前期(${pp.start.slice(5).replace('-','/')}〜${pp.end.slice(5).replace('-','/')})に、チェックされていない固定費が${miss.length}件あります</div>
+          ${miss.map(f=>`<div class="fixed-item-row" style="padding:4px 0;"><input type="checkbox" class="fixed-prev-check" data-id="${f.id}" style="width:20px;height:20px;"><div class="fixed-info" style="margin-left:8px;flex:1;"><div class="name">${escapeHtml(f.name)}</div></div><div class="fixed-amount">${yen(f.amount)}</div></div>`).join('')}
+        </div>`;
+      })()}
       ${fixedSorted.length ? fixedSorted.map(f=>{
         const logged = isFixedCostLogged(f, period);
         return `
@@ -1254,7 +1264,9 @@ function renderAdvances(){
     <button class="link-btn" id="copyAdvList" style="margin-bottom:10px;">この一覧をテキストでコピー</button><br>
     <button class="link-btn" id="manageContacts" style="margin-bottom:14px;">相手リストを管理</button>
     ${list.length ? list.map(a=>`
-      <div class="adv-card adv-row" data-id="${a.id}">
+      <div class="adv-card adv-row" data-id="${a.id}" style="display:flex;align-items:flex-start;gap:8px;">
+        ${a.settled?'<span style="width:20px;flex:0 0 20px;"></span>':`<input type="checkbox" class="adv-sel" data-id="${a.id}" ${(state.advSel||[]).includes(a.id)?'checked':''} style="width:20px;height:20px;margin-top:2px;flex:0 0 20px;">`}
+        <div style="flex:1;min-width:0;">
         <div class="t1"><span>${escapeHtml(a.person)}</span><span>${yen(a.amount)}</span></div>
         <div class="t2">
           <span>${a.date}${a.memo?'・'+escapeHtml(a.memo):''}</span>
@@ -1263,7 +1275,21 @@ function renderAdvances(){
             ${a.receiptImg?`<img class="receipt-thumb" src="${a.receiptImg}">`:''}
           </span>
         </div>
+        </div>
       </div>`).join('') : '<div class="no-data">立て替え記録がありません</div>'}
+    ${(()=>{
+      const un = list.filter(a=>!a.settled);
+      if(!un.length) return '';
+      const sel = (state.advSel||[]).filter(id=>un.some(a=>a.id===id));
+      const tot = un.filter(a=>sel.includes(a.id)).reduce((q,a)=>q+a.amount,0);
+      return `<label style="display:block;margin:10px 0;font-size:13px;"><input type="checkbox" id="advSelAll" ${sel.length===un.length?'checked':''} style="width:auto;margin-right:6px;">未精算をすべて選ぶ</label>
+      ${sel.length?`<div class="card" id="advBulk" style="position:sticky;bottom:70px;border:1px solid var(--border);">
+        <div style="font-size:13px;margin-bottom:8px;">選んだ${sel.length}件(合計${yen(tot)})</div>
+        <div class="form-field"><label>戻る先の口座</label><select id="bulkAcc">${accountOptionsHtml((savingsAccount()||{}).id||'', false)}</select></div>
+        <div class="form-field"><label>精算した日</label><input type="date" id="bulkDate" value="${todayStr()}" max="${todayStr()}"></div>
+        <div id="bulkErr" style="color:var(--danger);font-size:12px;min-height:16px;"></div>
+        <button class="save" id="bulkGo" style="width:100%;">精算する</button></div>`:''}`;
+    })()}
     <button class="add-btn" id="addAdvance">+ 立て替えを追加</button>
   `;
 }
@@ -1421,14 +1447,24 @@ function attachScreenEvents(){
     if(advCard) advCard.onclick = ()=>{ state.screen='advances'; render(); };
     const transferBtn = document.getElementById('openTransferBtn');
     if(transferBtn) transferBtn.onclick = ()=> openTransferForm();
+    document.querySelectorAll('.fixed-prev-check').forEach(cb=>{
+      cb.onchange = ()=>{
+        const f = state.fixedCosts.find(x=>x.id===cb.dataset.id);
+        cb.checked = false;
+        const cur = getCurrentPeriod(), pp = periodByOffset(-1);
+        let d = pp.start;
+        for(let x=pp.start; x<=pp.end; x=shiftDateStr(x,1)){ if(Number(x.slice(8,10))===f.day){ d=x; break; } }
+        openFixedDateForm(f, d, pp.start, pp.end);
+      };
+    });
     document.querySelectorAll('.fixed-check').forEach(cb=>{
       cb.onchange = async ()=>{
         const f = state.fixedCosts.find(x=>x.id===cb.dataset.id);
         if(!f) return;
         const period = getCurrentPeriod();
         if(cb.checked){
-          const cat = await getFixedCostCategoryId();
-          await addDoc(collection(db,'users',state.uid,'transactions'), { type:'expense', category:cat, amount:f.amount, date:todayStr(), memo:f.name, accountId:f.accountId||'', fixedCostId:f.id, createdAt:Date.now() });
+          cb.checked = false;
+          openFixedDateForm(f, todayStr(), '', '');
         } else {
           const t = findFixedCostTransaction(f, period);
           if(t) await deleteDoc(doc(db,'users',state.uid,'transactions',t.id));
@@ -1580,6 +1616,33 @@ function attachScreenEvents(){
     document.querySelectorAll('.adv-row').forEach(r=>{
       r.onclick = ()=>openAdvanceForm(state.advances.find(a=>a.id===r.dataset.id));
     });
+    document.querySelectorAll('.adv-sel').forEach(c=>{
+      c.onclick = e=>e.stopPropagation();
+      c.onchange = ()=>{
+        const set = new Set(state.advSel||[]);
+        if(c.checked) set.add(c.dataset.id); else set.delete(c.dataset.id);
+        state.advSel = [...set]; render();
+      };
+    });
+    const selAll = document.getElementById('advSelAll');
+    if(selAll) selAll.onchange = ()=>{
+      state.advSel = selAll.checked ? [...document.querySelectorAll('.adv-sel')].map(c=>c.dataset.id) : [];
+      render();
+    };
+    const bulkGo = document.getElementById('bulkGo');
+    if(bulkGo) bulkGo.onclick = async ()=>{
+      const acc = document.getElementById('bulkAcc').value, d = document.getElementById('bulkDate').value;
+      const err = document.getElementById('bulkErr');
+      const targets = state.advances.filter(a=>!a.settled && (state.advSel||[]).includes(a.id));
+      if(!d){ err.textContent='精算した日を選んでください'; return; }
+      if(d>todayStr()){ err.textContent='未来の日付は選べません'; return; }
+      const bad = targets.find(a=>a.date>d);
+      if(bad){ err.textContent=`${bad.date}の立替は、精算した日より後の日付です。日付を直してください`; return; }
+      for(const a of targets){
+        await updateDoc(doc(db,'users',state.uid,'advances',a.id), { settled:true, settledDate:d, settleAccountId:acc });
+      }
+      state.advSel = [];
+    };
   }
   if(state.screen==='shopping'){
     document.getElementById('addHeading').onclick = ()=>openHeadingForm(null);
@@ -1692,6 +1755,26 @@ function openDayModal(dateStr){
   `;
   document.getElementById('modalOverlay').classList.add('show');
   document.getElementById('mClose').onclick = closeModal;
+}
+function openFixedDateForm(f, defDate, minD, maxD){
+  const box = document.getElementById('modalBox');
+  box.innerHTML = `
+    <div class="mh"><span>固定費を記録</span><button id="mClose">✕</button></div>
+    <div style="font-size:14px;margin-bottom:10px;">${escapeHtml(f.name)}　${yen(f.amount)}</div>
+    <div class="form-field"><label>支払った日</label><input type="date" id="fxDate" value="${defDate}" ${minD?`min="${minD}" max="${maxD}"`:''}></div>
+    <div id="fxErr" style="color:var(--danger);font-size:12px;min-height:16px;"></div>
+    <div class="form-actions"><button class="cancel" id="fxCancel">キャンセル</button><button class="save" id="fxSave">記録する</button></div>`;
+  document.getElementById('modalOverlay').classList.add('show');
+  const cancel = ()=>{ closeModal(); render(); };
+  document.getElementById('mClose').onclick = cancel;
+  document.getElementById('fxCancel').onclick = cancel;
+  document.getElementById('fxSave').onclick = async ()=>{
+    const d = document.getElementById('fxDate').value;
+    if(!d){ document.getElementById('fxErr').textContent='日付を選んでください'; return; }
+    const cat = await getFixedCostCategoryId();
+    await addDoc(collection(db,'users',state.uid,'transactions'), { type:'expense', category:cat, amount:f.amount, date:d, memo:f.name, accountId:f.accountId||'', fixedCostId:f.id, createdAt:Date.now() });
+    closeModal();
+  };
 }
 function closeModal(){ document.getElementById('modalOverlay').classList.remove('show'); }
 document.getElementById('modalOverlay').addEventListener('click', e=>{ if(e.target.id==='modalOverlay') closeModal(); });
@@ -2291,7 +2374,11 @@ function openAdvanceForm(existing){
     <div class="form-field"><label>レシート写真(任意)</label><input type="file" accept="image/*" id="aReceipt">
       <div id="aReceiptPreview" style="margin-top:8px;">${receiptData?`<img src="${receiptData}" style="max-width:100px;border-radius:8px;">`:''}</div>
     </div>
-    <div class="form-field"><label><input type="checkbox" id="aSettled" ${existing&&existing.settled?'checked':''} style="width:auto;margin-right:6px;">精算済みにする(口座1に戻ります)</label></div>
+    <div class="form-field"><label><input type="checkbox" id="aSettled" ${existing&&existing.settled?'checked':''} style="width:auto;margin-right:6px;">精算済みにする</label></div>
+    <div id="aSettleWrap" style="display:${existing&&existing.settled?'block':'none'};">
+      <div class="form-field"><label>戻る先の口座</label><select id="aSettleAcc">${accountOptionsHtml(existing?(existing.settleAccountId||existing.accountId||''):'', false)}</select></div>
+      <div class="form-field"><label>精算した日</label><input type="date" id="aSettleDate" value="${existing&&existing.settledDate?existing.settledDate:todayStr()}" max="${todayStr()}"></div>
+    </div>
     <div id="aErr" style="color:var(--danger);font-size:12px;min-height:16px;"></div>
     <div class="form-actions">
       <button class="cancel" id="fCancel">キャンセル</button>
@@ -2304,6 +2391,10 @@ function openAdvanceForm(existing){
   document.getElementById('fCancel').onclick = closeModal;
   const settledCb = document.getElementById('aSettled');
   const accSel = document.getElementById('aAccount');
+  const settleAccSel = document.getElementById('aSettleAcc');
+  if(!(existing&&existing.settled) && accSel.value) settleAccSel.value = accSel.value;
+  accSel.addEventListener('change', ()=>{ if(!settledCb.checked && accSel.value) settleAccSel.value = accSel.value; });
+  settledCb.addEventListener('change', ()=>{ document.getElementById('aSettleWrap').style.display = settledCb.checked ? 'block' : 'none'; });
   const personSel = document.getElementById('aPersonSel');
   const personNewWrap = document.getElementById('aPersonNewWrap');
   personNewWrap.style.display = personSel.value==='__new__' ? 'block' : 'none';
@@ -2336,13 +2427,17 @@ function openAdvanceForm(existing){
       memo: document.getElementById('aMemo').value.trim(),
       accountId: document.getElementById('aAccount').value,
       settled: document.getElementById('aSettled').checked,
-      settledDate: document.getElementById('aSettled').checked ? (existing&&existing.settled ? (existing.settledDate||'') : todayStr()) : '',
-      settleAccountId: document.getElementById('aSettled').checked ? ((existing&&existing.settleAccountId) || (savingsAccount()||{}).id || document.getElementById('aAccount').value) : '',
+      settledDate: document.getElementById('aSettled').checked ? (document.getElementById('aSettleDate').value || todayStr()) : '',
+      settleAccountId: document.getElementById('aSettled').checked ? (document.getElementById('aSettleAcc').value || document.getElementById('aAccount').value) : '',
       receiptImg: receiptData || null
     };
     if(data.amount<=0){ errEl.textContent = '金額を正しく入力してください'; return; }
     if(!data.date){ errEl.textContent = '日付を選択してください'; return; }
     if(!data.accountId){ errEl.textContent = '口座を選択してください'; return; }
+    if(data.settled){
+      if(data.settledDate < data.date){ errEl.textContent = '精算した日は、立て替えた日より後の日にしてください'; return; }
+      if(data.settledDate > todayStr()){ errEl.textContent = '精算した日に、未来の日付は選べません'; return; }
+    }
     if(existing) await updateDoc(doc(db,'users',state.uid,'advances',existing.id), data);
     else await addDoc(collection(db,'users',state.uid,'advances'), {...data, createdAt:Date.now()});
     closeModal();
