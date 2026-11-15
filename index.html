@@ -601,7 +601,7 @@ function renderHome(){
     if(need>0 && a.balance < need){
       const isSav = savAcc && a.id===savAcc.id;
       const adv = isSav ? state.advances.filter(x=>!x.settled && x.accountId===savAcc.id).reduce((q,x)=>q+x.amount,0) : 0;
-      const msg = `${a.name} 貯蓄過不足 ${yen(a.balance-need)}(立替未精算${yen(adv)}) 清算後 ${yen(a.balance+adv)}`;
+      const msg = `${a.name}のお金が、貯蓄の合計より${yen(need-a.balance)}足りません<br>(${a.name} ${yen(a.balance)} / 貯蓄 ${yen(need)})` + (adv>0 ? `<br>立替(未精算 ${yen(adv)})が戻ると、${a.balance+adv>=need?'足ります':'あと'+yen(need-a.balance-adv)+'足りません'}` : '');
       if(adv>0 && a.balance + adv >= need){ level = 'orange'; }
       else { level = 'red'; }
       accNotices.push({ level, text: msg });
@@ -948,7 +948,7 @@ function renderAnalysis(){
   const f = d => d.replace(/-/g,'/').slice(5);
   const row = (label, c, p, pct) => {
     const d = c-p;
-    const pc = pct && p>0 ? `<div style="font-size:10px;color:var(--text-sub);">${Math.round(c/p*100)}%</div>` : '';
+    const pc = pct && p>0 ? `<div style="font-size:10px;color:var(--text-sub);">${(c>=p?'+':'')+Math.round((c-p)/p*100)}%</div>` : '';
     return `<div style="display:grid;grid-template-columns:1.25fr 1fr 1fr 1fr;gap:4px;align-items:start;padding:6px 0;border-bottom:1px solid var(--surface-2);font-size:12px;">
       <div style="color:var(--text-sub);">${label}</div>
       <div style="text-align:right;">${yen(p)}</div>
@@ -959,7 +959,7 @@ function renderAnalysis(){
   return `
     <div class="card-label">前期との比較</div>
     <div class="card" style="margin-bottom:14px;">
-      <div class="an-sub">左は前の期の最終結果(固定)、右は${isNow?'今日までの累計':'その期の最終結果'}です。差は、右から左を引いた金額です。プラスはオレンジ(前より多い)、マイナスは緑(前より少ない)です。</div>
+      <div class="an-sub">前期は最終結果、今期は今日までの合計です。<br>オレンジ=前期より多い / 緑=前期より少ない</div>
       <div style="display:grid;grid-template-columns:1.25fr 1fr 1fr 1fr;gap:4px;font-size:11px;color:var(--text-sub);padding-bottom:4px;">
         <div></div>
         <div style="text-align:right;">前の期<br>${f(prevP.start)}〜${f(prevP.end)}</div>
@@ -973,7 +973,7 @@ function renderAnalysis(){
       ${row('支出<br>(固定費を除く)', cur.free, prv.free, true)}
       ${row(isNow?'繰越<br>(貯蓄を除く・見込み)':'繰越<br>(貯蓄を除く)', cur.carry, prv.carry, false)}
       ${row('使えるお金', cur.usable, prv.usable, false)}
-      <div class="an-sub" style="margin-top:8px;">・「繰越」は、節約した結果、貯蓄を除いて残ったお金です。前の期は実際に残った金額、今期は固定費と予算を決めた額まで使う前提の見込みです。<br>・「貯蓄」は、実績を入力していればその金額、入力していなければ毎月の目標額です。<br>・「予算」は、予算を決めたカテゴリで使った金額です(支出に含まれます)。<br>・「使えるお金」は、いまの固定費・予算の設定額で計算しています。<br>・過去に精算した立替は、立て替えた期の中で戻ったものとして、残高を計算しています。</div>
+      <div class="an-sub" style="margin-top:8px;">・繰越:貯蓄を引いて、残ったお金(今期は、固定費と予算を決めた額まで使う場合の見込み)<br>・貯蓄:入力した実績。なければ毎月の目標<br>・予算:予算を決めた項目で使った金額<br>・使えるお金:固定費と予算を引いたあとの残り</div>
     </div>`;
 }
 function renderSummary(){
