@@ -707,11 +707,11 @@ function renderHome(){
       ${(()=>{
         const pp = periodByOffset(-1);
         const prev = { start: pp.start, end: period.start };
-        const miss = state.fixedCosts.filter(f=>!isFixedCostLogged(f, prev));
+        const miss = state.fixedCosts.filter(f=>(!f.startDate || f.startDate < prev.end) && !isFixedCostLogged(f, prev));
         if(!miss.length || !state.transactions.some(t=>t.date>=prev.start && t.date<prev.end)) return '';
         return `<div style="background:var(--danger-bg);border-radius:8px;padding:8px 10px;margin:6px 0 10px;">
           <div style="font-size:12px;color:var(--danger);margin-bottom:6px;">前期(${pp.start.slice(5).replace('-','/')}〜${pp.end.slice(5).replace('-','/')})に、チェックされていない固定費が${miss.length}件あります</div>
-          ${miss.map(f=>`<div class="fixed-item-row" style="padding:4px 0;"><input type="checkbox" class="fixed-prev-check" data-id="${f.id}" style="width:20px;height:20px;"><div class="fixed-info" style="margin-left:8px;flex:1;"><div class="name">${escapeHtml(f.name)}</div></div><div class="fixed-amount">${yen(f.amount)}</div></div>`).join('')}
+          ${miss.map(f=>`<div class="fixed-item-row" style="padding:4px 0;"><input type="checkbox" class="fixed-prev-check" data-id="${f.id}" style="width:20px;height:20px;"><div class="fixed-info" style="margin-left:8px;flex:1;"><div class="name">${escapeHtml(f.name)}</div></div><div class="fixed-amount">${yen(f.amount)}</div><button class="fixed-skip" data-id="${f.id}" style="margin-left:8px;background:none;border:1px solid var(--border);color:var(--text-sub);border-radius:8px;font-size:11px;padding:4px 8px;">対象外</button></div>`).join('')}
         </div>`;
       })()}
       ${fixedSorted.length ? fixedSorted.map(f=>{
@@ -1447,6 +1447,9 @@ function attachScreenEvents(){
     if(advCard) advCard.onclick = ()=>{ state.screen='advances'; render(); };
     const transferBtn = document.getElementById('openTransferBtn');
     if(transferBtn) transferBtn.onclick = ()=> openTransferForm();
+    document.querySelectorAll('.fixed-skip').forEach(b=>{
+      b.onclick = async ()=>{ await updateDoc(doc(db,'users',state.uid,'fixedCosts',b.dataset.id), { startDate: getCurrentPeriod().start }); };
+    });
     document.querySelectorAll('.fixed-prev-check').forEach(cb=>{
       cb.onchange = ()=>{
         const f = state.fixedCosts.find(x=>x.id===cb.dataset.id);
@@ -2129,7 +2132,7 @@ function openFixedForm(existing){
     };
     if(!data.name){ return; }
     if(existing) await updateDoc(doc(db,'users',state.uid,'fixedCosts',existing.id), data);
-    else await addDoc(collection(db,'users',state.uid,'fixedCosts'), data);
+    else await addDoc(collection(db,'users',state.uid,'fixedCosts'), {...data, startDate: todayStr()});
     closeModal();
   };
 }
